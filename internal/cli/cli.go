@@ -76,18 +76,26 @@ type Env struct {
 	Rand    io.Reader
 }
 
+// stamp is the time a write records: Env.Now, or time.Now when it is nil, in UTC and truncated to the millisecond.
+func (e Env) stamp() time.Time {
+	now := time.Now
+	if e.Now != nil {
+		now = e.Now
+	}
+	return now().UTC().Truncate(time.Millisecond)
+}
+
 // Run runs one command and returns its exit code.
 func Run(args []string, env Env) int {
 	if len(args) == 0 {
-		fmt.Fprintf(env.Stderr, "cairn: no command given\n")
-		return 1
+		return fail(env, false, 2, "usage", "no command given (run `cairn help`)")
 	}
 	cmd := args[0]
 
 	switch cmd {
-	case "version":
+	case "version", "--version":
 		return runVersion(env, args[1:])
-	case "help":
+	case "help", "--help", "-h":
 		return runHelp(env, args[1:])
 	case "init":
 		return runInit(env, args[1:])
@@ -107,10 +115,6 @@ func Run(args []string, env Env) int {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// JSON detection
-// ---------------------------------------------------------------------------
-
 // scanJSON returns true when args contains a standalone "--json" before any "--".
 func scanJSON(args []string) bool {
 	for _, a := range args {
@@ -123,10 +127,6 @@ func scanJSON(args []string) bool {
 	}
 	return false
 }
-
-// ---------------------------------------------------------------------------
-// Flag parsing
-// ---------------------------------------------------------------------------
 
 // flagSpec declares whether a flag takes a value and whether it is repeatable.
 type flagSpec struct {
@@ -194,10 +194,6 @@ func parseFlags(args []string, valid map[string]flagSpec) (*parseResult, error) 
 	return res, nil
 }
 
-// ---------------------------------------------------------------------------
-// Command specs
-// ---------------------------------------------------------------------------
-
 func newFlags() map[string]flagSpec {
 	return map[string]flagSpec{
 		"json": {false, false}, "force": {false, false}, "as": {true, false},
@@ -225,20 +221,16 @@ func rmFlags() map[string]flagSpec {
 
 func showFlags() map[string]flagSpec {
 	return map[string]flagSpec{
-		"json": {false, false}, "all": {false, false}, "branches": {false, false},
+		"json": {false, false},
 	}
 }
 
 func lsFlags() map[string]flagSpec {
 	return map[string]flagSpec{
 		"json": {false, false}, "status": {true, false}, "tag": {true, true},
-		"milestone": {true, false}, "due-before": {true, false}, "branches": {false, false},
+		"milestone": {true, false}, "due-before": {true, false},
 	}
 }
-
-// ---------------------------------------------------------------------------
-// Command implementations
-// ---------------------------------------------------------------------------
 
 func runVersion(env Env, args []string) int {
 	jsonOn := scanJSON(args)
@@ -291,6 +283,7 @@ func runInit(env Env, args []string) int {
 	if jsonOn {
 		return successJSON(env, map[string]string{"dir": s.Dir})
 	}
+	fmt.Fprintf(env.Stdout, "initialized %s\n", s.Dir)
 	return 0
 }
 
@@ -308,26 +301,29 @@ func runNew(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "title must not be blank")
 	}
 
-	actor, actorErr := requireActor(env, res)
-	if actorErr != "" {
+	if _, actorErr := requireActor(env, res); actorErr != "" {
 		return fail(env, jsonOn, 2, "usage", actorErr)
 	}
-	_ = actor
 
 	s, sErr := store.Find(env.Dir)
 	if sErr != nil {
-		return storeFail(env, jsonOn, sErr)
+		return storeFail(env, jsonOn, sErr, "")
 	}
 	cfg, cfgErr := s.Config()
 	if cfgErr != nil {
 		return fail(env, jsonOn, 1, "error", cfgErr.Error())
 	}
 
-	// Validate tags.
-	tags := res.values["tag"]
-	for _, t := range tags {
+	if len(cfg.Statuses) == 0 {
+		return fail(env, jsonOn, 1, "error", "config.yml lists no statuses")
+	}
+	tags := []string{}
+	for _, t := range res.values["tag"] {
 		if tagErr := validateTag(t, cfg); tagErr != "" {
 			return fail(env, jsonOn, 2, "usage", tagErr)
+		}
+		if !slices.Contains(tags, t) {
+			tags = append(tags, t)
 		}
 	}
 
@@ -364,11 +360,7 @@ func runNew(env Env, args []string) int {
 		return fail(env, jsonOn, 1, "error", idErr.Error())
 	}
 
-	now := env.Now()
-	if now.IsZero() && env.Now == nil {
-		now = time.Now()
-	}
-	now = now.UTC().Truncate(time.Millisecond)
+	now := env.stamp()
 
 	issue := model.Issue{
 		ID:        newID,
@@ -381,10 +373,6 @@ func runNew(env Env, args []string) int {
 		Updated:   now,
 		Body:      body,
 	}
-	if issue.Tags == nil {
-		issue.Tags = []string{}
-	}
-
 	if saveErr := s.SaveIssue(issue); saveErr != nil {
 		return fail(env, jsonOn, 1, "error", saveErr.Error())
 	}
@@ -407,19 +395,17 @@ func runEdit(env Env, args []string) int {
 	}
 	issueID := res.positionals[0]
 
-	actor, actorErr := requireActor(env, res)
-	if actorErr != "" {
+	if _, actorErr := requireActor(env, res); actorErr != "" {
 		return fail(env, jsonOn, 2, "usage", actorErr)
 	}
-	_ = actor
 
 	s, sErr := store.Find(env.Dir)
 	if sErr != nil {
-		return storeFail(env, jsonOn, sErr)
+		return storeFail(env, jsonOn, sErr, "")
 	}
 	issue, _, loadErr := s.LoadIssue(issueID)
 	if loadErr != nil {
-		return storeFail(env, jsonOn, loadErr)
+		return storeFail(env, jsonOn, loadErr, issueID)
 	}
 	cfg, cfgErr := s.Config()
 	if cfgErr != nil {
@@ -498,12 +484,7 @@ func runEdit(env Env, args []string) int {
 		issue.Due = newDue
 	}
 
-	// Update time.
-	now := env.Now()
-	if now.IsZero() && env.Now == nil {
-		now = time.Now()
-	}
-	issue.Updated = now.UTC().Truncate(time.Millisecond)
+	issue.Updated = env.stamp()
 
 	if saveErr := s.SaveIssue(issue); saveErr != nil {
 		return fail(env, jsonOn, 1, "error", saveErr.Error())
@@ -527,18 +508,16 @@ func runRm(env Env, args []string) int {
 	}
 	issueID := res.positionals[0]
 
-	actor, actorErr := requireActor(env, res)
-	if actorErr != "" {
+	if _, actorErr := requireActor(env, res); actorErr != "" {
 		return fail(env, jsonOn, 2, "usage", actorErr)
 	}
-	_ = actor
 
 	s, sErr := store.Find(env.Dir)
 	if sErr != nil {
-		return storeFail(env, jsonOn, sErr)
+		return storeFail(env, jsonOn, sErr, "")
 	}
 	if rmErr := s.RemoveIssue(issueID); rmErr != nil {
-		return storeFail(env, jsonOn, rmErr)
+		return storeFail(env, jsonOn, rmErr, issueID)
 	}
 
 	if jsonOn {
@@ -561,11 +540,11 @@ func runShow(env Env, args []string) int {
 
 	s, sErr := store.Find(env.Dir)
 	if sErr != nil {
-		return storeFail(env, jsonOn, sErr)
+		return storeFail(env, jsonOn, sErr, "")
 	}
 	issue, _, loadErr := s.LoadIssue(issueID)
 	if loadErr != nil {
-		return storeFail(env, jsonOn, loadErr)
+		return storeFail(env, jsonOn, loadErr, issueID)
 	}
 
 	if jsonOn {
@@ -602,7 +581,7 @@ func runLs(env Env, args []string) int {
 
 	s, sErr := store.Find(env.Dir)
 	if sErr != nil {
-		return storeFail(env, jsonOn, sErr)
+		return storeFail(env, jsonOn, sErr, "")
 	}
 	issues, listErr := s.ListIssues()
 	if listErr != nil {
@@ -662,10 +641,6 @@ func runLs(env Env, args []string) int {
 	return 0
 }
 
-// ---------------------------------------------------------------------------
-// Validation helpers
-// ---------------------------------------------------------------------------
-
 func validateTag(t string, cfg model.Config) string {
 	if t == "" {
 		return "tag must not be empty"
@@ -683,19 +658,16 @@ func validateTag(t string, cfg model.Config) string {
 	return ""
 }
 
+// validateEditTag checks one edit --tag value. A removal only needs a tag, so one whose group has left the config
+// can still be removed.
 func validateEditTag(e string, cfg model.Config) string {
-	var tag string
-	if strings.HasPrefix(e, "+") {
-		tag = e[1:]
-	} else if strings.HasPrefix(e, "-") {
-		tag = e[1:]
-	} else {
-		tag = e
+	if tag, ok := strings.CutPrefix(e, "-"); ok {
+		if tag == "" {
+			return "tag operation has an empty tag"
+		}
+		return ""
 	}
-	if tag == "" {
-		return "tag operation has an empty tag"
-	}
-	return validateTag(tag, cfg)
+	return validateTag(strings.TrimPrefix(e, "+"), cfg)
 }
 
 func applyTagEdits(existing []string, edits []string) []string {
@@ -760,10 +732,6 @@ func requireActor(env Env, res *parseResult) (string, string) {
 	return as, ""
 }
 
-// ---------------------------------------------------------------------------
-// JSON output helpers
-// ---------------------------------------------------------------------------
-
 func issueToJSON(i model.Issue) map[string]any {
 	return issueToJSONMap(i, true)
 }
@@ -790,10 +758,6 @@ func issueToJSONMap(i model.Issue, withBody bool) map[string]any {
 	return m
 }
 
-// ---------------------------------------------------------------------------
-// Output and failure helpers
-// ---------------------------------------------------------------------------
-
 func successJSON(env Env, data any) int {
 	writeJSON(env.Stdout, struct {
 		OK   bool `json:"ok"`
@@ -813,12 +777,13 @@ func fail(env Env, jsonOn bool, exitCode int, code, message string) int {
 	return exitCode
 }
 
-func storeFail(env Env, jsonOn bool, err error) int {
+// storeFail maps a store error to its exit and error codes. issueID names the issue in a not-found message.
+func storeFail(env Env, jsonOn bool, err error, issueID string) int {
 	switch {
 	case errors.Is(err, store.ErrNoTracker):
-		return fail(env, jsonOn, 1, "no_tracker", "no .cairn folder found")
+		return fail(env, jsonOn, 1, "no_tracker", "no .cairn folder here or above")
 	case errors.Is(err, store.ErrNotFound):
-		return fail(env, jsonOn, 4, "not_found", "issue not found")
+		return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no issue %q", issueID))
 	default:
 		return fail(env, jsonOn, 1, "error", err.Error())
 	}
