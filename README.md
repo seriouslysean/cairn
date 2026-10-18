@@ -33,13 +33,17 @@ Commit `.cairn/` with your code.
 
 ## For agents
 
-- Add `--json` to any command. Success prints `{"ok": true, "data": …}`; failure prints
-  `{"ok": false, "error": {"code": "…", "message": "…"}}`.
-- Exit codes: 0 ok, 1 error, 2 usage, 4 not found.
-- Cairn does not look for duplicates: run `cairn search` before `cairn new`.
-- A comment is `evidence` (with `--source`), a `decision` or a `result`. Retract a wrong one with `cairn retract`
-  rather than deleting it.
-- `cairn help` lists every command, and [docs/spec.md](docs/spec.md) has the rest.
+Put this in your repository's AGENTS.md:
+
+```md
+## Issues
+
+This repo tracks issues with Cairn. Run `cairn help` before using it, and set `CAIRN_ACTOR` to your name.
+```
+
+`cairn help` prints every command's usage and the rules. Add `--json` to any command: success prints
+`{"ok": true, "data": …}`, failure prints `{"ok": false, "error": {"code": "…", "message": "…"}}`, and the exit codes
+are 0 ok, 1 error, 2 usage, 4 not found. [docs/spec.md](docs/spec.md) has the rest.
 
 ## Requests
 

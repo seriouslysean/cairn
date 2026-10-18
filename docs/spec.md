@@ -102,6 +102,7 @@ Every key is optional. Shown above with the defaults, except that `github_repo` 
 | Search | `cairn search "words"`, `cairn search --meaning "text"` |
 | Board | `cairn board`, `cairn board --html <file>` |
 | Sync | `cairn pull`, `cairn push [--dry-run]` |
+| Help | `cairn help`, `cairn version` |
 
 - Every write takes `--as <actor>` and, optionally, `--persona <p>` and `--model <m>`. The actor can also come from the
   `CAIRN_ACTOR` environment variable. `new` and `comment` record all three as `by`, `persona` and `model`; `retract`
@@ -113,6 +114,16 @@ Every key is optional. Shown above with the defaults, except that `github_repo` 
   - 1: error;
   - 2: usage;
   - 4: not found (3 is not used).
+- `help` prints one usage line per command, then the rules below, word for word. With `--json` its data is
+  `{"usage": [...], "rules": [...]}`.
+
+## Rules
+An agent with only the binary learns these from `cairn help`:
+- Run cairn search before cairn new: Cairn does not look for duplicates.
+- Comment on an issue someone else owns rather than editing it: comments never conflict across branches.
+- evidence needs --source, decision quotes the owner, result says what was done.
+- To close an issue, add a result comment, then cairn edit <id> --status done.
+- Retract a wrong comment instead of deleting it. purge is only for mistakes like a pasted secret.
 
 ## Comments are data, not chat
 - A writer may add three kinds, and `comment` refuses anything else (`pull` also creates kind `github`, below):

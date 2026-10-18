@@ -87,8 +87,9 @@
 //     least one match are listed by matches, most first, then in store order. Text: one
 //     "<id>\t<matches>\t<title>\n" line each. Data: a list of issues without "body", each with "matches" added (an
 //     empty list, never null, when nothing matches).
-//   - version, help. help lists every command, and its text ends with the line "Cairn does not look for duplicates:
-//     run cairn search before cairn new."
+//   - version.
+//   - help prints commandUsage, one usage line per command, then agentRules, the rules in docs/spec.md. Data:
+//     {"usage": commandUsage, "rules": agentRules}.
 //
 // A tag is non-empty with no space, ",", "[" or "]". When it has a ":", the part before the first ":" must be one of
 // the config's tag_groups. A milestone has no "/".
@@ -363,12 +364,42 @@ func runHelp(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "help takes no arguments")
 	}
 	if jsonOn {
-		return successJSON(env, "cairn init | new | edit | rm | show | ls | comment | retract | purge | tags | milestones | milestone | search | version | help")
+		return successJSON(env, map[string][]string{"usage": commandUsage, "rules": agentRules})
 	}
-	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n\nCommands:\n"+
-		"  init   new   edit   rm   show   ls   comment   retract   purge   tags   milestones   milestone   search   version   help\n\n"+
-		"Cairn does not look for duplicates: run cairn search before cairn new.\n")
+	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n"+
+		"Every command takes --json. Writes take --as (or CAIRN_ACTOR), --persona and --model.\n\n"+
+		"Commands:\n  "+strings.Join(commandUsage, "\n  ")+"\n\n"+
+		"Rules:\n  "+strings.Join(agentRules, "\n  ")+"\n")
 	return 0
+}
+
+// commandUsage is one usage line per command, in the order help prints them.
+var commandUsage = []string{
+	`init`,
+	`new "title" [--body text] [--tag t]... [--milestone m] [--due YYYY-MM-DD]`,
+	`edit <id> [--title t] [--body text] [--status s] [--tag +t|-t]... [--milestone m] [--due YYYY-MM-DD]`,
+	`rm <id>`,
+	`show <id> [--all]`,
+	`ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]`,
+	`comment <id> --kind evidence|decision|result [--source s] "text"`,
+	`retract <id> <comment> --reason "text" [--disproved-by <comment>]`,
+	`purge <id> <comment>`,
+	`tags`,
+	`milestones`,
+	`milestone new <id> "title" [--due YYYY-MM-DD]`,
+	`milestone edit <id> [--title t] [--status s] [--due YYYY-MM-DD]`,
+	`search <words>...`,
+	`version`,
+	`help`,
+}
+
+// agentRules are the rules for using Cairn that docs/spec.md gives, word for word.
+var agentRules = []string{
+	"Run cairn search before cairn new: Cairn does not look for duplicates.",
+	"Comment on an issue someone else owns rather than editing it: comments never conflict across branches.",
+	"evidence needs --source, decision quotes the owner, result says what was done.",
+	"To close an issue, add a result comment, then cairn edit <id> --status done.",
+	"Retract a wrong comment instead of deleting it. purge is only for mistakes like a pasted secret.",
 }
 
 func runInit(env Env, args []string) int {
