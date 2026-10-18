@@ -30,12 +30,20 @@ status: in-progress
 tags: [severity:high, effort:2, area:export]
 milestone: v0.4
 due: 2026-11-01
+by: alice
+model: example-model-1
 created: 2026-10-17T19:00:00Z
 updated: 2026-10-17T19:20:00Z
 github: 123
 ---
 What is wrong, why it matters, and what "done" means.
 ```
+- `by`, `persona` and `model` say who created the issue. `new` sets them once; edits and sync never change them. Who
+  edited an issue is not recorded.
+- An issue without them was made before Cairn recorded creators, and its creator is unknown: nothing fills them in
+  later.
+- They are what the writer gave, not checked identities. `model` names the model that ran the command, not
+  necessarily the author of every word.
 `github` appears only after a sync. Dates are `YYYY-MM-DD`; times are UTC RFC 3339, with fractional seconds when the time has them, so comments made in
 the same second still sort in order.
 
@@ -95,7 +103,8 @@ Every key is optional. Shown above with the defaults, except that `github_repo` 
 | Sync | `cairn pull`, `cairn push [--dry-run]` |
 
 - Every write takes `--as <actor>` and, optionally, `--persona <p>` and `--model <m>`. The actor can also come from the
-  `CAIRN_ACTOR` environment variable.
+  `CAIRN_ACTOR` environment variable. `new` and `comment` record all three as `by`, `persona` and `model`; `retract`
+  records the actor as `retracted_by`.
 - Every command takes `--json`. On success it prints `{"ok": true, "data": …}`. On failure it prints
   `{"ok": false, "error": {"code": "…", "message": "…"}}` on stdout, and a one-line message on stderr.
 - Exit codes:
@@ -139,12 +148,14 @@ Every key is optional. Shown above with the defaults, except that `github_repo` 
 
 ## GitHub sync (optional, through the `gh` CLI)
 - `pull`:
-  - New GitHub issues become Cairn issues with `github: N`.
+  - New GitHub issues become Cairn issues with `github: N` and `by: github:<login>` for their GitHub author, with no
+    persona or model: the actor running `pull` is not their creator.
   - For issues already linked, state and labels update.
   - The title and body belong to Cairn: edits made on GitHub are reported, not merged.
-  - GitHub comments arrive as comments of kind `github`.
+  - GitHub comments arrive as comments of kind `github`, with `by: github:<login>`.
 - `push`:
-  - Issues without `github` are created on GitHub.
+  - Issues without `github` are created on GitHub. On GitHub their author is whoever owns the `gh` login; `by` stays
+    as it is.
   - Linked issues get their title, body, labels and state updated, and their new active comments posted.
   - Issues closed on GitHub are skipped and reported.
   - `--dry-run` prints what would change.

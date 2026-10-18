@@ -89,6 +89,10 @@ Read-only context:
 - internal/store/store_test.go
 - internal/words/words_test.go
 
+## Step 4b: issue creators
+`new` records the actor, persona and model on the issue as `by`, `persona` and `model`, set once. Edits and sync never
+change them. Recording who edited an issue is a potential follow-up (issues #4 and #5), not part of v0.1.0.
+
 ## Step 5: lists and search
 `tags` (with counts), `milestones`, and `search` by words.
 
@@ -96,7 +100,7 @@ Read-only context:
 `dupes` with the word-overlap score, plus the check that `new` runs (exit code 3, `--force`).
 
 ## Version 0.1.0
-A working tracker on one checkout: steps 1 to 6, then the release step below. Everything under "Later" comes after.
+A working tracker on one checkout: steps 1 to 6 (with 4b), then the release step below. Everything under "Later" comes after.
 
 Release step:
 - CI runs `scripts/check.sh` on every pull request, and `go vet` and `go test` on Go 1.24, the oldest version `go.mod`

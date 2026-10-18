@@ -183,13 +183,13 @@ func TestCommentJSONShape(t *testing.T) {
 	// show adds "comments" to the issue; new and edit do not.
 	_, data, _ = tr.json("show", "0123")
 	var shown map[string]any
-	if err := json.Unmarshal(data, &shown); err != nil || len(shown) != 11 {
-		t.Fatalf("show: want the 10 issue keys and comments, got %s", data)
+	if err := json.Unmarshal(data, &shown); err != nil || len(shown) != 14 {
+		t.Fatalf("show: want the 13 issue keys and comments, got %s", data)
 	}
 	_, data, _ = tr.json("edit", "0123", "--title", "b")
 	var edited map[string]any
-	if err := json.Unmarshal(data, &edited); err != nil || len(edited) != 10 {
-		t.Fatalf("edit: want 10 keys, got %s", data)
+	if err := json.Unmarshal(data, &edited); err != nil || len(edited) != 13 {
+		t.Fatalf("edit: want 13 keys, got %s", data)
 	}
 
 	tr.retract("0123", "c-4567", "--reason", "wrong issue")

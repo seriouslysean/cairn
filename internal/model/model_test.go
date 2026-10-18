@@ -310,3 +310,28 @@ func TestParseRejectsWrongShape(t *testing.T) {
 		t.Error("config github_repo list: want an error")
 	}
 }
+
+func TestIssueCreator(t *testing.T) {
+	i := Issue{ID: "7f3k", Title: "t", Status: "open", Due: "2026-11-01", By: "alice", Persona: "skeptic",
+		Model: "example-model-1", Created: at("2026-10-17T19:00:00Z"), Updated: at("2026-10-17T19:00:00Z"), GitHub: 7}
+	if got := keys(i.Fields()); got != "id title status due by persona model created updated github" {
+		t.Errorf("order: %q", got)
+	}
+	j, err := ParseIssue(split(t, join(t, i.Fields(), i.Body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(i, j) {
+		t.Fatalf("got  %+v\nwant %+v", j, i)
+	}
+	i.Persona, i.Model = "", ""
+	if got := keys(i.Fields()); got != "id title status due by created updated github" {
+		t.Errorf("empty persona and model must be left out: %q", got)
+	}
+	for _, key := range []string{"by", "persona", "model"} {
+		src := strings.Replace(specIssue, "github: 123\n", "github: 123\n"+key+": [a, b]\n", 1)
+		if _, err := ParseIssue(split(t, src)); err == nil {
+			t.Errorf("%s as a list: want an error", key)
+		}
+	}
+}

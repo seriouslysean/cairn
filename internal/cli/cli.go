@@ -24,8 +24,9 @@
 //     the id that was not found.
 //
 // Writes (new, edit, rm, comment, retract, purge) need an actor: --as, or else the CAIRN_ACTOR environment variable.
-// They also take --persona and --model. comment records them as by, persona and model, and retract records the actor
-// as retracted_by; the other writes check the actor but store it nowhere.
+// They also take --persona and --model. new records them on the issue as by, persona and model, once: no later write
+// changes them, and an issue without them keeps "". comment records them the same way on the comment, and retract
+// records the actor as retracted_by; the other writes check the actor but store it nowhere.
 //
 // Commands:
 //   - init: makes .cairn in Env.Dir (it does not look upward). Text: "initialized <the .cairn path>\n". Data:
@@ -40,7 +41,7 @@
 //     it; a removed tag only has to be non-empty, so a tag whose group left the config can still go. An empty
 //     --milestone or --due clears it. updated becomes Env.Now as in new. Text: the id and "\n". Data: the issue.
 //   - rm <id>: deletes the issue folder, comments included. Text: "removed <id>\n". Data: {"id": id}.
-//   - show <id> [--all]: Text: the issue for a person to read, then its active comments in order, each with its id,
+//   - show <id> [--all]: Text: the issue for a person to read, with its by, persona and model when set, then its active comments in order, each with its id,
 //     kind, by, persona and model when set, at, source when set, and body. --all adds the retracted comments in their
 //     places, each marked "retracted" with its retracted_by, retracted_at, reason and disproved_by. Data: the issue
 //     plus "comments", its active comments in order (all of them with --all), a list never null.
@@ -67,8 +68,8 @@
 // A tag is non-empty with no space, ",", "[" or "]". When it has a ":", the part before the first ":" must be one of
 // the config's tag_groups. A milestone has no "/".
 //
-// An issue in data is {"id", "title", "status", "tags", "milestone", "due", "created", "updated", "github", "body"},
-// every key always present: tags is a list (never null), times are RFC 3339 UTC strings, github is a number (0 when
+// An issue in data is {"id", "title", "status", "tags", "milestone", "due", "by", "persona", "model", "created",
+// "updated", "github", "body"}, every key always present: tags is a list (never null), times are RFC 3339 UTC strings, github is a number (0 when
 // not synced), and empty text is "". Only show adds "comments".
 //
 // A comment in data is {"id", "kind", "by", "persona", "model", "at", "source", "body", "retracted"}, every key always
@@ -354,7 +355,8 @@ func runNew(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "title must not be blank")
 	}
 
-	if _, actorErr := requireActor(env, res); actorErr != "" {
+	actor, actorErr := requireActor(env, res)
+	if actorErr != "" {
 		return fail(env, jsonOn, 2, "usage", actorErr)
 	}
 
@@ -418,6 +420,9 @@ func runNew(env Env, args []string) int {
 		Tags:      tags,
 		Milestone: milestone,
 		Due:       due,
+		By:        actor,
+		Persona:   lastValue(res, "persona"),
+		Model:     lastValue(res, "model"),
 		Created:   now,
 		Updated:   now,
 		Body:      body,
@@ -615,6 +620,12 @@ func runShow(env Env, args []string) int {
 	if issue.Due != "" {
 		fmt.Fprintf(env.Stdout, "due: %s\n", issue.Due)
 	}
+	for _, f := range []struct{ key, value string }{{"by", issue.By}, {"persona", issue.Persona},
+		{"model", issue.Model}} {
+		if f.value != "" {
+			fmt.Fprintf(env.Stdout, "%s: %s\n", f.key, f.value)
+		}
+	}
 	fmt.Fprintf(env.Stdout, "created: %s\nupdated: %s\n",
 		issue.Created.Format(time.RFC3339Nano), issue.Updated.Format(time.RFC3339Nano))
 	if issue.Body != "" {
@@ -810,23 +821,13 @@ func runComment(env Env, args []string) int {
 		return storeFail(env, jsonOn, idErr, issueID)
 	}
 
-	// Get persona and model.
-	persona := ""
-	if vals, ok := res.values["persona"]; ok {
-		persona = vals[len(vals)-1]
-	}
-	modelName := ""
-	if vals, ok := res.values["model"]; ok {
-		modelName = vals[len(vals)-1]
-	}
-
 	now := env.stamp()
 	c := model.Comment{
 		ID:      commentID,
 		Kind:    kind,
 		By:      actor,
-		Persona: persona,
-		Model:   modelName,
+		Persona: lastValue(res, "persona"),
+		Model:   lastValue(res, "model"),
 		At:      now,
 		Source:  source,
 		Body:    body,
@@ -1072,6 +1073,14 @@ func requireActor(env Env, res *parseResult) (string, string) {
 	return as, ""
 }
 
+// lastValue is the last value given for a flag, or "" when it was not given.
+func lastValue(res *parseResult, name string) string {
+	if vals := res.values[name]; len(vals) > 0 {
+		return vals[len(vals)-1]
+	}
+	return ""
+}
+
 func issueToJSON(i model.Issue) map[string]any {
 	return issueToJSONMap(i, true)
 }
@@ -1088,6 +1097,9 @@ func issueToJSONMap(i model.Issue, withBody bool) map[string]any {
 		"tags":      tags,
 		"milestone": i.Milestone,
 		"due":       i.Due,
+		"by":        i.By,
+		"persona":   i.Persona,
+		"model":     i.Model,
 		"created":   i.Created.Format(time.RFC3339Nano),
 		"updated":   i.Updated.Format(time.RFC3339Nano),
 		"github":    i.GitHub,

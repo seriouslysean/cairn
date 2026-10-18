@@ -175,13 +175,15 @@ func TestIssueJSONShape(t *testing.T) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"id", "title", "status", "tags", "milestone", "due", "created", "updated", "github", "body"} {
+	keys := []string{"id", "title", "status", "tags", "milestone", "due", "by", "persona", "model", "created", "updated",
+		"github", "body"}
+	for _, k := range keys {
 		if _, ok := m[k]; !ok {
 			t.Errorf("missing key %q", k)
 		}
 	}
-	if len(m) != 10 {
-		t.Errorf("want exactly 10 keys, got %v", m)
+	if len(m) != len(keys) {
+		t.Errorf("want exactly %d keys, got %v", len(keys), m)
 	}
 	if tags, ok := m["tags"].([]any); !ok || len(tags) != 0 {
 		t.Errorf("tags must be an empty list, got %#v", m["tags"])
@@ -493,4 +495,81 @@ func TestConfigWithoutStatuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	tr.wantError(1, "error", "new", "a")
+}
+
+type creator struct {
+	By      string `json:"by"`
+	Persona string `json:"persona"`
+	Model   string `json:"model"`
+}
+
+func (tr *tracker) creator(args ...string) creator {
+	tr.t.Helper()
+	code, data, errCode := tr.json(args...)
+	if code != 0 {
+		tr.t.Fatalf("%q: exit %d (%s)", args, code, errCode)
+	}
+	var c creator
+	if err := json.Unmarshal(data, &c); err != nil {
+		tr.t.Fatalf("%q: %s", args, data)
+	}
+	return c
+}
+
+// new records who created the issue, once; nothing later changes it.
+func TestNewRecordsCreator(t *testing.T) {
+	tr := newTracker(t)
+	want := creator{By: "bob", Persona: "skeptic", Model: "example-model-1"}
+	if got := tr.creator("new", "a", "--as", "bob", "--persona", "skeptic", "--model", "example-model-1"); got != want {
+		t.Fatalf("new: %+v", got)
+	}
+	data, err := os.ReadFile(filepath.Join(tr.dir, ".cairn", "issues", "0123", "issue.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "\nby: bob\npersona: skeptic\nmodel: example-model-1\ncreated: ") {
+		t.Fatalf("file:\n%s", data)
+	}
+	if got := tr.creator("edit", "0123", "--title", "b", "--persona", "other", "--model", "example-model-2"); got != want {
+		t.Fatalf("edit changed the creator: %+v", got)
+	}
+	if got := tr.creator("show", "0123"); got != want {
+		t.Fatalf("show: %+v", got)
+	}
+	if got := tr.creator("new", "c"); got != (creator{By: "alice"}) {
+		t.Fatalf("new from CAIRN_ACTOR: %+v", got)
+	}
+	_, out, _ := tr.run("show", "0123")
+	for _, s := range []string{"bob", "skeptic", "example-model-1"} {
+		if !strings.Contains(out, s) {
+			t.Errorf("show text: no %q in %q", s, out)
+		}
+	}
+	code, data2, _ := tr.json("ls")
+	var items []creator
+	if code != 0 || json.Unmarshal(data2, &items) != nil || len(items) != 2 || items[0] != want {
+		t.Fatalf("ls: exit %d, %s", code, data2)
+	}
+}
+
+// An issue made before creators were recorded keeps an unknown creator: an edit must not fill it in.
+func TestOldIssueKeepsUnknownCreator(t *testing.T) {
+	tr := newTracker(t)
+	s, err := store.Find(tr.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveIssue(model.Issue{ID: "7f3k", Title: "a", Status: "open", Created: t0, Updated: t0}); err != nil {
+		t.Fatal(err)
+	}
+	if got := tr.creator("edit", "7f3k", "--status", "done", "--persona", "skeptic"); got != (creator{}) {
+		t.Fatalf("edit filled in the creator: %+v", got)
+	}
+	data, err := os.ReadFile(filepath.Join(tr.dir, ".cairn", "issues", "7f3k", "issue.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "by:") || strings.Contains(string(data), "persona:") {
+		t.Fatalf("file:\n%s", data)
+	}
 }
