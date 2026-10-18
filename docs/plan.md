@@ -95,7 +95,7 @@ change them. Recording who edited an issue is a potential follow-up (issues #4 a
 
 ## Step 5: lists and search
 `tags` (with counts), `milestones`, and `search` by words. Search splits words with `internal/words`, as the
-retracted-comment warning does and `dupes` will. The contract is the package comment in `internal/cli/cli.go`.
+retracted-comment warning does. The contract is the package comment in `internal/cli/cli.go`.
 
 Drafter edits:
 - internal/cli/cli.go

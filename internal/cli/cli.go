@@ -77,7 +77,8 @@
 //     least one match are listed by matches, most first, then in store order. Text: one
 //     "<id>\t<matches>\t<title>\n" line each. Data: a list of issues without "body", each with "matches" added (an
 //     empty list, never null, when nothing matches).
-//   - version, help. help lists every command.
+//   - version, help. help lists every command, and its text ends with the line "Cairn does not look for duplicates:
+//     run cairn search before cairn new."
 //
 // A tag is non-empty with no space, ",", "[" or "]". When it has a ":", the part before the first ":" must be one of
 // the config's tag_groups. A milestone has no "/".

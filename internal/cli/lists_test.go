@@ -248,4 +248,8 @@ func TestHelpListsListCommands(t *testing.T) {
 			t.Errorf("help does not list %q: %q", cmd, out)
 		}
 	}
+	// Cairn does not look for duplicates (issues #15 and #16), so help says to search first.
+	if !strings.HasSuffix(out, "\nCairn does not look for duplicates: run cairn search before cairn new.\n") {
+		t.Errorf("help does not say to search before new: %q", out)
+	}
 }
