@@ -695,56 +695,7 @@ func runShow(env Env, args []string) int {
 		return successJSON(env, data)
 	}
 
-	fmt.Fprintf(env.Stdout, "id: %s\ntitle: %s\nstatus: %s\n", issue.ID, issue.Title, issue.Status)
-	if len(issue.Tags) > 0 {
-		fmt.Fprintf(env.Stdout, "tags: %s\n", strings.Join(issue.Tags, ", "))
-	}
-	if issue.Milestone != "" {
-		fmt.Fprintf(env.Stdout, "milestone: %s\n", issue.Milestone)
-	}
-	if issue.Due != "" {
-		fmt.Fprintf(env.Stdout, "due: %s\n", issue.Due)
-	}
-	for _, f := range []struct{ key, value string }{{"by", issue.By}, {"persona", issue.Persona},
-		{"model", issue.Model}} {
-		if f.value != "" {
-			fmt.Fprintf(env.Stdout, "%s: %s\n", f.key, f.value)
-		}
-	}
-	fmt.Fprintf(env.Stdout, "created: %s\nupdated: %s\n",
-		model.FormatTime(issue.Created), model.FormatTime(issue.Updated))
-	if issue.Body != "" {
-		fmt.Fprintf(env.Stdout, "\n%s", issue.Body)
-	}
-	for _, c := range shown {
-		fmt.Fprintf(env.Stdout, "\n--- %s", c.ID)
-		if c.RetractedBy != "" {
-			fmt.Fprintf(env.Stdout, " [retracted]")
-		}
-		fmt.Fprintf(env.Stdout, " ---\n")
-		fmt.Fprintf(env.Stdout, "kind: %s\nby: %s\n", c.Kind, c.By)
-		if c.Persona != "" {
-			fmt.Fprintf(env.Stdout, "persona: %s\n", c.Persona)
-		}
-		if c.Model != "" {
-			fmt.Fprintf(env.Stdout, "model: %s\n", c.Model)
-		}
-		fmt.Fprintf(env.Stdout, "at: %s\n", model.FormatTime(c.At))
-		if c.Source != "" {
-			fmt.Fprintf(env.Stdout, "source: %s\n", c.Source)
-		}
-		if c.RetractedBy != "" {
-			fmt.Fprintf(env.Stdout, "retracted_by: %s\n", c.RetractedBy)
-			fmt.Fprintf(env.Stdout, "retracted_at: %s\n", model.FormatTime(c.RetractedAt))
-			fmt.Fprintf(env.Stdout, "retracted_reason: %s\n", c.RetractedReason)
-			if c.DisprovedBy != "" {
-				fmt.Fprintf(env.Stdout, "disproved_by: %s\n", c.DisprovedBy)
-			}
-		}
-		if c.Body != "" {
-			fmt.Fprintf(env.Stdout, "\n%s", c.Body)
-		}
-	}
+	printIssue(env.Stdout, issue, shown)
 	return 0
 }
 
@@ -767,43 +718,15 @@ func runLs(env Env, args []string) int {
 		return fail(env, jsonOn, 1, "error", listErr.Error())
 	}
 
-	statusFilter := ""
-	if vals, ok := res.values["status"]; ok {
-		statusFilter = vals[len(vals)-1]
+	keep, usage := lsFilter(res)
+	if usage != "" {
+		return fail(env, jsonOn, 2, "usage", usage)
 	}
-	tagFilters := res.values["tag"]
-	milestoneFilter := ""
-	if vals, ok := res.values["milestone"]; ok {
-		milestoneFilter = vals[len(vals)-1]
-	}
-	dueBefore := ""
-	if vals, ok := res.values["due-before"]; ok {
-		dueBefore = vals[len(vals)-1]
-		if errStr := validateDate(dueBefore); errStr != "" {
-			return fail(env, jsonOn, 2, "usage", errStr)
-		}
-	}
-
 	var filtered []model.Issue
 	for _, iss := range issues {
-		if statusFilter != "" && iss.Status != statusFilter {
-			continue
+		if keep(iss) {
+			filtered = append(filtered, iss)
 		}
-		if !tagsMatch(iss.Tags, tagFilters) {
-			continue
-		}
-		if milestoneFilter != "" && iss.Milestone != milestoneFilter {
-			continue
-		}
-		if dueBefore != "" {
-			if iss.Due == "" {
-				continue
-			}
-			if iss.Due >= dueBefore {
-				continue
-			}
-		}
-		filtered = append(filtered, iss)
 	}
 
 	if jsonOn {
@@ -817,6 +740,85 @@ func runLs(env Env, args []string) int {
 		fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", iss.ID, iss.Status, iss.Title)
 	}
 	return 0
+}
+
+// printIssue writes an issue and the given comments as show's text output prints them.
+func printIssue(w io.Writer, issue model.Issue, comments []model.Comment) {
+	fmt.Fprintf(w, "id: %s\ntitle: %s\nstatus: %s\n", issue.ID, issue.Title, issue.Status)
+	if len(issue.Tags) > 0 {
+		fmt.Fprintf(w, "tags: %s\n", strings.Join(issue.Tags, ", "))
+	}
+	if issue.Milestone != "" {
+		fmt.Fprintf(w, "milestone: %s\n", issue.Milestone)
+	}
+	if issue.Due != "" {
+		fmt.Fprintf(w, "due: %s\n", issue.Due)
+	}
+	for _, f := range []struct{ key, value string }{{"by", issue.By}, {"persona", issue.Persona},
+		{"model", issue.Model}} {
+		if f.value != "" {
+			fmt.Fprintf(w, "%s: %s\n", f.key, f.value)
+		}
+	}
+	fmt.Fprintf(w, "created: %s\nupdated: %s\n",
+		model.FormatTime(issue.Created), model.FormatTime(issue.Updated))
+	if issue.Body != "" {
+		fmt.Fprintf(w, "\n%s", issue.Body)
+	}
+	for _, c := range comments {
+		fmt.Fprintf(w, "\n--- %s", c.ID)
+		if c.RetractedBy != "" {
+			fmt.Fprintf(w, " [retracted]")
+		}
+		fmt.Fprintf(w, " ---\n")
+		fmt.Fprintf(w, "kind: %s\nby: %s\n", c.Kind, c.By)
+		if c.Persona != "" {
+			fmt.Fprintf(w, "persona: %s\n", c.Persona)
+		}
+		if c.Model != "" {
+			fmt.Fprintf(w, "model: %s\n", c.Model)
+		}
+		fmt.Fprintf(w, "at: %s\n", model.FormatTime(c.At))
+		if c.Source != "" {
+			fmt.Fprintf(w, "source: %s\n", c.Source)
+		}
+		if c.RetractedBy != "" {
+			fmt.Fprintf(w, "retracted_by: %s\n", c.RetractedBy)
+			fmt.Fprintf(w, "retracted_at: %s\n", model.FormatTime(c.RetractedAt))
+			fmt.Fprintf(w, "retracted_reason: %s\n", c.RetractedReason)
+			if c.DisprovedBy != "" {
+				fmt.Fprintf(w, "disproved_by: %s\n", c.DisprovedBy)
+			}
+		}
+		if c.Body != "" {
+			fmt.Fprintf(w, "\n%s", c.Body)
+		}
+	}
+}
+
+// lsFilter turns ls's --status, --tag, --milestone and --due-before into a test each listed issue must pass. A
+// non-empty message is a usage error.
+func lsFilter(res *parseResult) (func(model.Issue) bool, string) {
+	status, milestone, dueBefore := lastValue(res, "status"), lastValue(res, "milestone"), lastValue(res, "due-before")
+	if dueBefore != "" {
+		if msg := validateDate(dueBefore); msg != "" {
+			return nil, msg
+		}
+	}
+	tags := res.values["tag"]
+	return func(iss model.Issue) bool {
+		switch {
+		case status != "" && iss.Status != status:
+			return false
+		case !tagsMatch(iss.Tags, tags):
+			return false
+		case milestone != "" && iss.Milestone != milestone:
+			return false
+		case dueBefore != "" && (iss.Due == "" || iss.Due >= dueBefore):
+			return false
+		}
+		return true
+	}, ""
 }
 
 func runComment(env Env, args []string) int {
