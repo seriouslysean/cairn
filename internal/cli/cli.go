@@ -87,6 +87,7 @@ import (
 
 	"github.com/seriouslysean/cairn/internal/model"
 	"github.com/seriouslysean/cairn/internal/store"
+	"github.com/seriouslysean/cairn/internal/words"
 )
 
 // Env is everything a command touches outside its arguments. A nil Now means time.Now, a nil Rand means
@@ -252,7 +253,7 @@ func rmFlags() map[string]flagSpec {
 
 func showFlags() map[string]flagSpec {
 	return map[string]flagSpec{
-		"json": {false, false},
+		"json": {false, false}, "all": {false, false},
 	}
 }
 
@@ -260,6 +261,27 @@ func lsFlags() map[string]flagSpec {
 	return map[string]flagSpec{
 		"json": {false, false}, "status": {true, false}, "tag": {true, true},
 		"milestone": {true, false}, "due-before": {true, false},
+	}
+}
+
+func commentFlags() map[string]flagSpec {
+	return map[string]flagSpec{
+		"json": {false, false}, "as": {true, false}, "persona": {true, false},
+		"model": {true, false}, "kind": {true, false}, "source": {true, false},
+	}
+}
+
+func retractFlags() map[string]flagSpec {
+	return map[string]flagSpec{
+		"json": {false, false}, "as": {true, false}, "persona": {true, false},
+		"model": {true, false}, "reason": {true, false}, "disproved-by": {true, false},
+	}
+}
+
+func purgeFlags() map[string]flagSpec {
+	return map[string]flagSpec{
+		"json": {false, false}, "as": {true, false}, "persona": {true, false},
+		"model": {true, false},
 	}
 }
 
@@ -289,9 +311,9 @@ func runHelp(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "help takes no arguments")
 	}
 	if jsonOn {
-		return successJSON(env, "cairn init | new | edit | rm | show | ls | version | help")
+		return successJSON(env, "cairn init | new | edit | rm | show | ls | comment | retract | purge | version | help")
 	}
-	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n\nCommands:\n  init   new   edit   rm   show   ls   version   help\n")
+	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n\nCommands:\n  init   new   edit   rm   show   ls   comment   retract   purge   version   help\n")
 	return 0
 }
 
@@ -358,7 +380,6 @@ func runNew(env Env, args []string) int {
 		}
 	}
 
-	// Validate milestone.
 	milestone := ""
 	if vals, ok := res.values["milestone"]; ok {
 		milestone = vals[len(vals)-1]
@@ -367,7 +388,6 @@ func runNew(env Env, args []string) int {
 		}
 	}
 
-	// Validate due.
 	due := ""
 	if vals, ok := res.values["due"]; ok {
 		due = vals[len(vals)-1]
@@ -376,7 +396,6 @@ func runNew(env Env, args []string) int {
 		}
 	}
 
-	// Body.
 	body := ""
 	if vals, ok := res.values["body"]; ok {
 		body = vals[len(vals)-1]
@@ -385,7 +404,6 @@ func runNew(env Env, args []string) int {
 		body += "\n"
 	}
 
-	// Generate id.
 	newID, idErr := s.NewIssueID(env.Rand)
 	if idErr != nil {
 		return fail(env, jsonOn, 1, "error", idErr.Error())
@@ -443,7 +461,6 @@ func runEdit(env Env, args []string) int {
 		return fail(env, jsonOn, 1, "error", cfgErr.Error())
 	}
 
-	// Check that at least one change is specified.
 	_, hasTitle := res.values["title"]
 	_, hasBody := res.values["body"]
 	_, hasStatus := res.values["status"]
@@ -454,7 +471,6 @@ func runEdit(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "edit requires at least one change")
 	}
 
-	// Apply title.
 	if hasTitle {
 		newTitle := res.values["title"][len(res.values["title"])-1]
 		if strings.TrimSpace(newTitle) == "" {
@@ -463,7 +479,6 @@ func runEdit(env Env, args []string) int {
 		issue.Title = newTitle
 	}
 
-	// Apply body.
 	if hasBody {
 		newBody := res.values["body"][len(res.values["body"])-1]
 		if newBody != "" && !strings.HasSuffix(newBody, "\n") {
@@ -472,7 +487,6 @@ func runEdit(env Env, args []string) int {
 		issue.Body = newBody
 	}
 
-	// Apply status.
 	if hasStatus {
 		newStatus := res.values["status"][len(res.values["status"])-1]
 		if !statusValid(newStatus, cfg) {
@@ -481,7 +495,6 @@ func runEdit(env Env, args []string) int {
 		issue.Status = newStatus
 	}
 
-	// Apply tags.
 	if hasTags {
 		edits := res.values["tag"]
 		for _, e := range edits {
@@ -495,7 +508,6 @@ func runEdit(env Env, args []string) int {
 		}
 	}
 
-	// Apply milestone.
 	if hasMilestone {
 		newMilestone := res.values["milestone"][len(res.values["milestone"])-1]
 		if strings.Contains(newMilestone, "/") {
@@ -504,7 +516,6 @@ func runEdit(env Env, args []string) int {
 		issue.Milestone = newMilestone
 	}
 
-	// Apply due.
 	if hasDue {
 		newDue := res.values["due"][len(res.values["due"])-1]
 		if newDue != "" {
@@ -568,18 +579,30 @@ func runShow(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "show requires exactly one issue id")
 	}
 	issueID := res.positionals[0]
+	allComments := res.bools["all"]
 
 	s, sErr := store.Find(env.Dir)
 	if sErr != nil {
 		return storeFail(env, jsonOn, sErr, "")
 	}
-	issue, _, loadErr := s.LoadIssue(issueID)
+	issue, comments, loadErr := s.LoadIssue(issueID)
 	if loadErr != nil {
 		return storeFail(env, jsonOn, loadErr, issueID)
 	}
 
+	// Filter out retracted comments unless --all.
+	var shown []model.Comment
+	for _, c := range comments {
+		if !allComments && c.RetractedBy != "" {
+			continue
+		}
+		shown = append(shown, c)
+	}
+
 	if jsonOn {
-		return successJSON(env, issueToJSON(issue))
+		data := issueToJSONMap(issue, true)
+		data["comments"] = commentsToJSON(shown)
+		return successJSON(env, data)
 	}
 
 	fmt.Fprintf(env.Stdout, "id: %s\ntitle: %s\nstatus: %s\n", issue.ID, issue.Title, issue.Status)
@@ -596,6 +619,35 @@ func runShow(env Env, args []string) int {
 		issue.Created.Format(time.RFC3339Nano), issue.Updated.Format(time.RFC3339Nano))
 	if issue.Body != "" {
 		fmt.Fprintf(env.Stdout, "\n%s", issue.Body)
+	}
+	for _, c := range shown {
+		fmt.Fprintf(env.Stdout, "\n--- %s", c.ID)
+		if c.RetractedBy != "" {
+			fmt.Fprintf(env.Stdout, " [retracted]")
+		}
+		fmt.Fprintf(env.Stdout, " ---\n")
+		fmt.Fprintf(env.Stdout, "kind: %s\nby: %s\n", c.Kind, c.By)
+		if c.Persona != "" {
+			fmt.Fprintf(env.Stdout, "persona: %s\n", c.Persona)
+		}
+		if c.Model != "" {
+			fmt.Fprintf(env.Stdout, "model: %s\n", c.Model)
+		}
+		fmt.Fprintf(env.Stdout, "at: %s\n", c.At.Format(time.RFC3339Nano))
+		if c.Source != "" {
+			fmt.Fprintf(env.Stdout, "source: %s\n", c.Source)
+		}
+		if c.RetractedBy != "" {
+			fmt.Fprintf(env.Stdout, "retracted_by: %s\n", c.RetractedBy)
+			fmt.Fprintf(env.Stdout, "retracted_at: %s\n", c.RetractedAt.Format(time.RFC3339Nano))
+			fmt.Fprintf(env.Stdout, "retracted_reason: %s\n", c.RetractedReason)
+			if c.DisprovedBy != "" {
+				fmt.Fprintf(env.Stdout, "disproved_by: %s\n", c.DisprovedBy)
+			}
+		}
+		if c.Body != "" {
+			fmt.Fprintf(env.Stdout, "\n%s", c.Body)
+		}
 	}
 	return 0
 }
@@ -619,7 +671,6 @@ func runLs(env Env, args []string) int {
 		return fail(env, jsonOn, 1, "error", listErr.Error())
 	}
 
-	// Filters.
 	statusFilter := ""
 	if vals, ok := res.values["status"]; ok {
 		statusFilter = vals[len(vals)-1]
@@ -673,15 +724,259 @@ func runLs(env Env, args []string) int {
 }
 
 func runComment(env Env, args []string) int {
-	panic("todo: step 4")
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, commentFlags())
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) != 2 {
+		return fail(env, jsonOn, 2, "usage", "comment requires exactly one issue id and one text")
+	}
+	issueID := res.positionals[0]
+	text := res.positionals[1]
+
+	// Validate kind.
+	kind := ""
+	if vals, ok := res.values["kind"]; ok {
+		kind = vals[len(vals)-1]
+	}
+	if kind != "evidence" && kind != "decision" && kind != "result" {
+		return fail(env, jsonOn, 2, "usage", "kind must be evidence, decision or result")
+	}
+
+	// Validate source for evidence.
+	source := ""
+	if vals, ok := res.values["source"]; ok {
+		source = vals[len(vals)-1]
+	}
+	if kind == "evidence" && strings.TrimSpace(source) == "" {
+		return fail(env, jsonOn, 2, "usage", "evidence requires --source")
+	}
+
+	// Validate text.
+	if strings.TrimSpace(text) == "" {
+		return fail(env, jsonOn, 2, "usage", "comment text must not be blank")
+	}
+
+	if _, actorErr := requireActor(env, res); actorErr != "" {
+		return fail(env, jsonOn, 2, "usage", actorErr)
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+
+	_, comments, loadErr := s.LoadIssue(issueID)
+	if loadErr != nil {
+		return storeFail(env, jsonOn, loadErr, issueID)
+	}
+
+	cfg, cfgErr := s.Config()
+	if cfgErr != nil {
+		return fail(env, jsonOn, 1, "error", cfgErr.Error())
+	}
+
+	// Check retracted comments for overlap warnings.
+	body := text
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+
+	type warning struct {
+		Comment string  `json:"comment"`
+		Reason  string  `json:"reason"`
+		Score   float64 `json:"score"`
+	}
+	var warnings []warning
+	for _, c := range comments {
+		if c.RetractedBy == "" {
+			continue
+		}
+		score := words.Overlap(text, c.Body)
+		if score >= cfg.DupeText {
+			warnings = append(warnings, warning{
+				Comment: c.ID,
+				Reason:  c.RetractedReason,
+				Score:   score,
+			})
+		}
+	}
+
+	// Generate new comment id.
+	commentID, idErr := s.NewCommentID(issueID, env.Rand)
+	if idErr != nil {
+		return storeFail(env, jsonOn, idErr, issueID)
+	}
+
+	// Get persona and model.
+	persona := ""
+	if vals, ok := res.values["persona"]; ok {
+		persona = vals[len(vals)-1]
+	}
+	modelName := ""
+	if vals, ok := res.values["model"]; ok {
+		modelName = vals[len(vals)-1]
+	}
+
+	now := env.stamp()
+	c := model.Comment{
+		ID:      commentID,
+		Kind:    kind,
+		By:      actorName(env, res),
+		Persona: persona,
+		Model:   modelName,
+		At:      now,
+		Source:  source,
+		Body:    body,
+	}
+
+	if saveErr := s.SaveComment(issueID, c); saveErr != nil {
+		return fail(env, jsonOn, 1, "save comment: %s", saveErr.Error())
+	}
+
+	// Print warnings.
+	for _, w := range warnings {
+		fmt.Fprintf(env.Stderr, "cairn: warning: matches retracted comment %s (reason %q)\n", w.Comment, w.Reason)
+	}
+
+	if jsonOn {
+		data := map[string]any{
+			"comment":  commentToJSON(c),
+			"warnings": warnings,
+		}
+		if warnings == nil {
+			data["warnings"] = []warning{}
+		}
+		return successJSON(env, data)
+	}
+	fmt.Fprintf(env.Stdout, "%s\n", commentID)
+	return 0
 }
 
 func runRetract(env Env, args []string) int {
-	panic("todo: step 4")
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, retractFlags())
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) != 2 {
+		return fail(env, jsonOn, 2, "usage", "retract requires exactly one issue id and one comment id")
+	}
+	issueID := res.positionals[0]
+	commentID := res.positionals[1]
+
+	reason := ""
+	if vals, ok := res.values["reason"]; ok {
+		reason = vals[len(vals)-1]
+	}
+	if strings.TrimSpace(reason) == "" {
+		return fail(env, jsonOn, 2, "usage", "retract requires a non-blank --reason")
+	}
+
+	disprovedBy := ""
+	if vals, ok := res.values["disproved-by"]; ok {
+		disprovedBy = vals[len(vals)-1]
+	}
+	if disprovedBy != "" && disprovedBy == commentID {
+		return fail(env, jsonOn, 2, "usage", "disproved-by must not be the same comment as the one being retracted")
+	}
+
+	if _, actorErr := requireActor(env, res); actorErr != "" {
+		return fail(env, jsonOn, 2, "usage", actorErr)
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+
+	_, comments, loadErr := s.LoadIssue(issueID)
+	if loadErr != nil {
+		return storeFail(env, jsonOn, loadErr, issueID)
+	}
+
+	// Find the comment to retract.
+	var target *model.Comment
+	for idx := range comments {
+		if comments[idx].ID == commentID {
+			target = &comments[idx]
+			break
+		}
+	}
+	if target == nil {
+		return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q", commentID))
+	}
+
+	// Check disproved-by exists if given.
+	if disprovedBy != "" {
+		found := false
+		for _, c := range comments {
+			if c.ID == disprovedBy {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q", disprovedBy))
+		}
+	}
+
+	// Check not already retracted.
+	if target.RetractedBy != "" {
+		return fail(env, jsonOn, 1, "error", fmt.Sprintf("comment %q is already retracted", commentID))
+	}
+
+	// Apply retraction.
+	target.RetractedBy = actorName(env, res)
+	target.RetractedAt = env.stamp()
+	target.RetractedReason = reason
+	target.DisprovedBy = disprovedBy
+
+	if saveErr := s.SaveComment(issueID, *target); saveErr != nil {
+		return fail(env, jsonOn, 1, "save comment: %s", saveErr.Error())
+	}
+
+	if jsonOn {
+		return successJSON(env, commentToJSON(*target))
+	}
+	fmt.Fprintf(env.Stdout, "retracted %s\n", commentID)
+	return 0
 }
 
 func runPurge(env Env, args []string) int {
-	panic("todo: step 4")
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, purgeFlags())
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) != 2 {
+		return fail(env, jsonOn, 2, "usage", "purge requires exactly one issue id and one comment id")
+	}
+	issueID := res.positionals[0]
+	commentID := res.positionals[1]
+
+	if _, actorErr := requireActor(env, res); actorErr != "" {
+		return fail(env, jsonOn, 2, "usage", actorErr)
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+
+	if rmErr := s.RemoveComment(issueID, commentID); rmErr != nil {
+		if errors.Is(rmErr, store.ErrNotFound) {
+			return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q", commentID))
+		}
+		return storeFail(env, jsonOn, rmErr, issueID)
+	}
+
+	if jsonOn {
+		return successJSON(env, map[string]string{"id": issueID, "comment": commentID})
+	}
+	fmt.Fprintf(env.Stdout, "purged %s\n", commentID)
+	return 0
 }
 
 func validateTag(t string, cfg model.Config) string {
@@ -775,6 +1070,18 @@ func requireActor(env Env, res *parseResult) (string, string) {
 	return as, ""
 }
 
+// actorName returns the actor for a write, assuming requireActor already validated it.
+func actorName(env Env, res *parseResult) string {
+	as := ""
+	if vals, ok := res.values["as"]; ok {
+		as = vals[len(vals)-1]
+	}
+	if as == "" && env.Getenv != nil {
+		as = env.Getenv("CAIRN_ACTOR")
+	}
+	return as
+}
+
 func issueToJSON(i model.Issue) map[string]any {
 	return issueToJSONMap(i, true)
 }
@@ -799,6 +1106,41 @@ func issueToJSONMap(i model.Issue, withBody bool) map[string]any {
 		m["body"] = i.Body
 	}
 	return m
+}
+
+func commentToJSON(c model.Comment) map[string]any {
+	m := map[string]any{
+		"id":      c.ID,
+		"kind":    c.Kind,
+		"by":      c.By,
+		"persona": c.Persona,
+		"model":   c.Model,
+		"at":      c.At.Format(time.RFC3339Nano),
+		"source":  c.Source,
+		"body":    c.Body,
+	}
+	if c.RetractedBy != "" {
+		m["retracted"] = map[string]any{
+			"by":           c.RetractedBy,
+			"at":           c.RetractedAt.Format(time.RFC3339Nano),
+			"reason":       c.RetractedReason,
+			"disproved_by": c.DisprovedBy,
+		}
+	} else {
+		m["retracted"] = nil
+	}
+	return m
+}
+
+func commentsToJSON(cs []model.Comment) []map[string]any {
+	if cs == nil {
+		return []map[string]any{}
+	}
+	result := make([]map[string]any, len(cs))
+	for i, c := range cs {
+		result[i] = commentToJSON(c)
+	}
+	return result
 }
 
 func successJSON(env Env, data any) int {

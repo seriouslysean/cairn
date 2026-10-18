@@ -319,5 +319,22 @@ func (s *Store) RemoveIssue(issueID string) error {
 // RemoveComment deletes issues/<issueID>/<commentID>.md and nothing else. It returns ErrNotFound when either id is not
 // valid, the issue does not exist, or the comment file does not exist.
 func (s *Store) RemoveComment(issueID, commentID string) error {
-	panic("todo: step 4")
+	if !id.Valid(issueID) {
+		return ErrNotFound
+	}
+	if !id.ValidComment(commentID) {
+		return ErrNotFound
+	}
+	folder := filepath.Join(s.Dir, "issues", issueID)
+	if _, err := os.Stat(filepath.Join(folder, "issue.md")); err != nil {
+		return ErrNotFound
+	}
+	commentFile := filepath.Join(folder, commentID+".md")
+	if _, err := os.Stat(commentFile); err != nil {
+		if os.IsNotExist(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	return os.Remove(commentFile)
 }
