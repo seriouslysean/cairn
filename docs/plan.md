@@ -84,7 +84,8 @@ matches a retracted one triggers the warning.
 A working tracker on one checkout: steps 1 to 6, then the release step below. Everything under "Later" comes after.
 
 Release step:
-- CI runs `scripts/check.sh` on every pull request.
+- CI runs `scripts/check.sh` on every pull request, and `go vet` and `go test` on Go 1.24, the oldest version `go.mod`
+  allows. This part landed before step 4, so every later pull request is checked.
 - `cairn version` reports the tag: the version is set at build time with `-ldflags "-X main.version=…"`.
 - `go install github.com/seriouslysean/cairn/cmd/cairn@v0.1.0` works, and the README says how to install and start.
 - Tag `v0.1.0` on main, with a GitHub release whose notes list what works and what is not in it yet.
