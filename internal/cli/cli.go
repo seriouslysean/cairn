@@ -758,7 +758,8 @@ func runComment(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "comment text must not be blank")
 	}
 
-	if _, actorErr := requireActor(env, res); actorErr != "" {
+	actor, actorErr := requireActor(env, res)
+	if actorErr != "" {
 		return fail(env, jsonOn, 2, "usage", actorErr)
 	}
 
@@ -823,7 +824,7 @@ func runComment(env Env, args []string) int {
 	c := model.Comment{
 		ID:      commentID,
 		Kind:    kind,
-		By:      actorName(env, res),
+		By:      actor,
 		Persona: persona,
 		Model:   modelName,
 		At:      now,
@@ -832,7 +833,7 @@ func runComment(env Env, args []string) int {
 	}
 
 	if saveErr := s.SaveComment(issueID, c); saveErr != nil {
-		return fail(env, jsonOn, 1, "save comment: %s", saveErr.Error())
+		return fail(env, jsonOn, 1, "error", saveErr.Error())
 	}
 
 	// Print warnings.
@@ -882,7 +883,8 @@ func runRetract(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "disproved-by must not be the same comment as the one being retracted")
 	}
 
-	if _, actorErr := requireActor(env, res); actorErr != "" {
+	actor, actorErr := requireActor(env, res)
+	if actorErr != "" {
 		return fail(env, jsonOn, 2, "usage", actorErr)
 	}
 
@@ -905,7 +907,7 @@ func runRetract(env Env, args []string) int {
 		}
 	}
 	if target == nil {
-		return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q", commentID))
+		return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q on issue %q", commentID, issueID))
 	}
 
 	// Check disproved-by exists if given.
@@ -918,7 +920,7 @@ func runRetract(env Env, args []string) int {
 			}
 		}
 		if !found {
-			return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q", disprovedBy))
+			return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q on issue %q", disprovedBy, issueID))
 		}
 	}
 
@@ -928,13 +930,13 @@ func runRetract(env Env, args []string) int {
 	}
 
 	// Apply retraction.
-	target.RetractedBy = actorName(env, res)
+	target.RetractedBy = actor
 	target.RetractedAt = env.stamp()
 	target.RetractedReason = reason
 	target.DisprovedBy = disprovedBy
 
 	if saveErr := s.SaveComment(issueID, *target); saveErr != nil {
-		return fail(env, jsonOn, 1, "save comment: %s", saveErr.Error())
+		return fail(env, jsonOn, 1, "error", saveErr.Error())
 	}
 
 	if jsonOn {
@@ -966,8 +968,8 @@ func runPurge(env Env, args []string) int {
 	}
 
 	if rmErr := s.RemoveComment(issueID, commentID); rmErr != nil {
-		if errors.Is(rmErr, store.ErrNotFound) {
-			return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q", commentID))
+		if errors.Is(rmErr, store.ErrNoComment) {
+			return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q on issue %q", commentID, issueID))
 		}
 		return storeFail(env, jsonOn, rmErr, issueID)
 	}
@@ -1068,18 +1070,6 @@ func requireActor(env Env, res *parseResult) (string, string) {
 		return "", "no actor: use --as or set CAIRN_ACTOR"
 	}
 	return as, ""
-}
-
-// actorName returns the actor for a write, assuming requireActor already validated it.
-func actorName(env Env, res *parseResult) string {
-	as := ""
-	if vals, ok := res.values["as"]; ok {
-		as = vals[len(vals)-1]
-	}
-	if as == "" && env.Getenv != nil {
-		as = env.Getenv("CAIRN_ACTOR")
-	}
-	return as
 }
 
 func issueToJSON(i model.Issue) map[string]any {

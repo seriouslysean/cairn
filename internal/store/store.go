@@ -331,19 +331,16 @@ func (s *Store) RemoveComment(issueID, commentID string) error {
 	if !id.Valid(issueID) {
 		return ErrNotFound
 	}
-	if !id.ValidComment(commentID) {
-		return ErrNotFound
-	}
 	folder := filepath.Join(s.Dir, "issues", issueID)
 	if _, err := os.Stat(filepath.Join(folder, "issue.md")); err != nil {
 		return ErrNotFound
 	}
-	commentFile := filepath.Join(folder, commentID+".md")
-	if _, err := os.Stat(commentFile); err != nil {
-		if os.IsNotExist(err) {
-			return ErrNotFound
-		}
-		return err
+	if !id.ValidComment(commentID) {
+		return ErrNoComment
 	}
-	return os.Remove(commentFile)
+	err := os.Remove(filepath.Join(folder, commentID+".md"))
+	if os.IsNotExist(err) {
+		return ErrNoComment
+	}
+	return err
 }

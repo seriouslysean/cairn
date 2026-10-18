@@ -40,9 +40,6 @@ func Split(s string) []string {
 func Overlap(a, b string) float64 {
 	wa := Split(a)
 	wb := Split(b)
-	if len(wa) == 0 && len(wb) == 0 {
-		return 0
-	}
 	setA := make(map[string]bool, len(wa))
 	for _, w := range wa {
 		setA[w] = true
