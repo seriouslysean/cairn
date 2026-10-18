@@ -355,7 +355,8 @@ func runNew(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "title must not be blank")
 	}
 
-	if _, actorErr := requireActor(env, res); actorErr != "" {
+	actor, actorErr := requireActor(env, res)
+	if actorErr != "" {
 		return fail(env, jsonOn, 2, "usage", actorErr)
 	}
 
@@ -419,6 +420,9 @@ func runNew(env Env, args []string) int {
 		Tags:      tags,
 		Milestone: milestone,
 		Due:       due,
+		By:        actor,
+		Persona:   lastValue(res, "persona"),
+		Model:     lastValue(res, "model"),
 		Created:   now,
 		Updated:   now,
 		Body:      body,
@@ -616,6 +620,12 @@ func runShow(env Env, args []string) int {
 	if issue.Due != "" {
 		fmt.Fprintf(env.Stdout, "due: %s\n", issue.Due)
 	}
+	for _, f := range []struct{ key, value string }{{"by", issue.By}, {"persona", issue.Persona},
+		{"model", issue.Model}} {
+		if f.value != "" {
+			fmt.Fprintf(env.Stdout, "%s: %s\n", f.key, f.value)
+		}
+	}
 	fmt.Fprintf(env.Stdout, "created: %s\nupdated: %s\n",
 		issue.Created.Format(time.RFC3339Nano), issue.Updated.Format(time.RFC3339Nano))
 	if issue.Body != "" {
@@ -811,23 +821,13 @@ func runComment(env Env, args []string) int {
 		return storeFail(env, jsonOn, idErr, issueID)
 	}
 
-	// Get persona and model.
-	persona := ""
-	if vals, ok := res.values["persona"]; ok {
-		persona = vals[len(vals)-1]
-	}
-	modelName := ""
-	if vals, ok := res.values["model"]; ok {
-		modelName = vals[len(vals)-1]
-	}
-
 	now := env.stamp()
 	c := model.Comment{
 		ID:      commentID,
 		Kind:    kind,
 		By:      actor,
-		Persona: persona,
-		Model:   modelName,
+		Persona: lastValue(res, "persona"),
+		Model:   lastValue(res, "model"),
 		At:      now,
 		Source:  source,
 		Body:    body,
@@ -1073,6 +1073,14 @@ func requireActor(env Env, res *parseResult) (string, string) {
 	return as, ""
 }
 
+// lastValue is the last value given for a flag, or "" when it was not given.
+func lastValue(res *parseResult, name string) string {
+	if vals := res.values[name]; len(vals) > 0 {
+		return vals[len(vals)-1]
+	}
+	return ""
+}
+
 func issueToJSON(i model.Issue) map[string]any {
 	return issueToJSONMap(i, true)
 }
@@ -1089,6 +1097,9 @@ func issueToJSONMap(i model.Issue, withBody bool) map[string]any {
 		"tags":      tags,
 		"milestone": i.Milestone,
 		"due":       i.Due,
+		"by":        i.By,
+		"persona":   i.Persona,
+		"model":     i.Model,
 		"created":   i.Created.Format(time.RFC3339Nano),
 		"updated":   i.Updated.Format(time.RFC3339Nano),
 		"github":    i.GitHub,

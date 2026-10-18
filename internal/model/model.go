@@ -93,7 +93,8 @@ func DefaultConfig() Config {
 // issueKnownKeys are the frontmatter keys ParseIssue handles.
 var issueKnownKeys = map[string]bool{
 	"id": true, "title": true, "status": true, "tags": true,
-	"milestone": true, "due": true, "created": true, "updated": true, "github": true,
+	"milestone": true, "due": true, "by": true, "persona": true, "model": true,
+	"created": true, "updated": true, "github": true,
 }
 
 // ParseIssue builds an Issue from a file's frontmatter and body. It returns an error for a missing required key, a
@@ -126,6 +127,12 @@ func ParseIssue(fields []doc.Field, body []byte) (Issue, error) {
 				return Issue{}, fmt.Errorf("model: bad due date %q: %w", f.Value, err)
 			}
 			i.Due = f.Value
+		case "by":
+			i.By = f.Value
+		case "persona":
+			i.Persona = f.Value
+		case "model":
+			i.Model = f.Value
 		case "created":
 			t, err := time.Parse(time.RFC3339, f.Value)
 			if err != nil {
@@ -184,6 +191,12 @@ func (i Issue) Fields() []doc.Field {
 	}
 	if i.Due != "" {
 		fields = append(fields, doc.Field{Key: "due", Value: i.Due})
+	}
+	for _, f := range []doc.Field{{Key: "by", Value: i.By}, {Key: "persona", Value: i.Persona},
+		{Key: "model", Value: i.Model}} {
+		if f.Value != "" {
+			fields = append(fields, f)
+		}
 	}
 	fields = append(fields,
 		doc.Field{Key: "created", Value: i.Created.Format(time.RFC3339Nano)},
