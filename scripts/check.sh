@@ -5,14 +5,13 @@ set -eu
 cd "$(dirname "$0")/.."
 
 fail=0
-out=$(gofmt -s -l .)
-if [ -n "$out" ]; then
+# Both commands can exit non-zero (go fix -diff does whenever it has a change), so a failure prints, not stops.
+if ! out=$(gofmt -s -l . 2>&1) || [ -n "$out" ]; then
 	echo "gofmt -s: these files need formatting:"
 	echo "$out"
 	fail=1
 fi
-out=$(go fix -diff ./...)
-if [ -n "$out" ]; then
+if ! out=$(go fix -diff ./... 2>&1) || [ -n "$out" ]; then
 	echo "go fix: run 'go fix ./...':"
 	echo "$out"
 	fail=1
