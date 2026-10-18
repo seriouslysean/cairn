@@ -112,8 +112,8 @@ Every key is optional. Shown above with the defaults, except that `github_repo` 
   - `result` is what was done: a PR, a commit or test output.
 - `retract` keeps the comment where it is and adds the retracted fields.
 - `show`, `ls` and `--json` leave retracted comments out. `--all` includes them, marked.
-- A new comment that closely matches a retracted one is still added, with a warning that names the retracted comment and
-  its reason.
+- A new comment whose word-overlap score (below) with a retracted comment on the same issue reaches `dupe_text` is still
+  added, with a warning that names the retracted comment and its reason.
 - `purge` deletes the comment file, for mistakes such as a pasted secret. Git history still holds it.
 
 ## Search and duplicates
@@ -122,6 +122,8 @@ Every key is optional. Shown above with the defaults, except that `github_repo` 
   - It needs `embeddings_url`, an OpenAI-compatible `/v1/embeddings` endpoint.
   - Vectors are cached in `.cairn/.index/`, keyed by each file's hash.
   - Search compares the query vector with every cached vector (cosine similarity).
+- The word-overlap score of two texts is the number of distinct words they share divided by the number of distinct
+  words in either. A word is a run of letters and digits, compared in lowercase.
 - `dupes` gives each candidate a word-overlap score and, when embeddings are configured, a meaning score. A candidate
   counts when either score reaches its threshold from the config.
 - `new` runs the same check first. If candidates exist, it exits with code 3 and lists them, unless `--force` is given.

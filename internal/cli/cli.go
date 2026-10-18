@@ -5,13 +5,14 @@
 // takes the next argument even when it starts with "-", so "--tag -t" works, but not one that starts with "--": that
 // is a missing value, and "--name=--value" passes such a value. --tag can be repeated; for any other flag the last
 // one wins. No arguments at all is a usage error. "--help" and "-h" mean help, and "--version" means version.
-// Flags that later steps build (--all, --branches) are usage errors until then.
+// --branches, which a later step builds, is a usage error until then, and so is --all anywhere but show.
 //
 // Output: --json anywhere before "--" turns on JSON, even when the other arguments are wrong. With --json, success
 // prints {"ok": true, "data": …} and failure prints
 // {"ok": false, "error": {"code": "…", "message": "…"}} on stdout, plus the message on one line of stderr. Without
 // --json, success prints text on stdout and failure prints "cairn: <message>" on one line of stderr and nothing on
-// stdout.
+// stdout. A command that succeeds with warnings still exits 0, and prints each warning in both modes as one line
+// "cairn: warning: <message>" on stderr.
 //
 // Exit codes and error codes:
 //   - 0: ok.
@@ -19,10 +20,12 @@
 //   - 2: "usage": an unknown command or flag, a missing or extra argument, a missing value, or a value in the wrong
 //     form, including a bad date, a status not in the config, a tag whose group is not in the config, and a write
 //     with no actor.
-//   - 4: "not_found": no issue with that id. The message names the id.
+//   - 4: "not_found": no issue or comment with that id, including a comment id that is not valid. The message names
+//     the id that was not found.
 //
-// Writes (new, edit, rm) need an actor: --as, or else the CAIRN_ACTOR environment variable. They also take --persona
-// and --model. Step 3 checks the actor but stores it nowhere; comments (step 4) record it.
+// Writes (new, edit, rm, comment, retract, purge) need an actor: --as, or else the CAIRN_ACTOR environment variable.
+// They also take --persona and --model. comment records them as by, persona and model, and retract records the actor
+// as retracted_by; the other writes check the actor but store it nowhere.
 //
 // Commands:
 //   - init: makes .cairn in Env.Dir (it does not look upward). Text: "initialized <the .cairn path>\n". Data:
@@ -37,18 +40,40 @@
 //     it; a removed tag only has to be non-empty, so a tag whose group left the config can still go. An empty
 //     --milestone or --due clears it. updated becomes Env.Now as in new. Text: the id and "\n". Data: the issue.
 //   - rm <id>: deletes the issue folder, comments included. Text: "removed <id>\n". Data: {"id": id}.
-//   - show <id>: Text: the issue for a person to read. Data: the issue.
+//   - show <id> [--all]: Text: the issue for a person to read, then its active comments in order, each with its id,
+//     kind, by, persona and model when set, at, source when set, and body. --all adds the retracted comments in their
+//     places, each marked "retracted" with its retracted_by, retracted_at, reason and disproved_by. Data: the issue
+//     plus "comments", its active comments in order (all of them with --all), a list never null.
 //   - ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]: lists issues in store order. Every filter
 //     given must match; --due-before keeps issues with a due date before d. Text: one "<id>\t<status>\t<title>\n"
 //     line per issue. Data: a list of issues without "body" (an empty list, never null).
-//   - version, help.
+//   - comment <id> --kind evidence|decision|result [--source s] "text": adds a comment with a new id, by, persona and
+//     model from the actor flags, and at set to Env.Now as in new. The text must not be blank, and gets a trailing
+//     "\n" as a body does. evidence needs a --source that is not blank; any other kind, github included, is a usage
+//     error. A comment never changes issue.md. When the text's words.Overlap with a retracted comment on the same
+//     issue reaches the config's dupe_text, the comment is still added, with one warning per such comment in
+//     comment order: "matches retracted comment <comment id> (reason <reason as %q>)". Text: the new comment id and
+//     "\n". Data: {"comment": the comment, "warnings": [{"comment": id, "reason": reason, "score": overlap}, …]},
+//     warnings an empty list when there are none.
+//   - retract <id> <comment> --reason "…" [--disproved-by <comment>]: keeps the comment and sets retracted_by to the
+//     actor, retracted_at to Env.Now as in new, retracted_reason, and disproved_by. The reason must not be blank.
+//     --disproved-by names another comment on the same issue: one that does not exist is not_found, and the comment
+//     itself is a usage error. A comment already retracted is an "error" and stays as it was. Text: "retracted
+//     <comment>\n". Data: the comment.
+//   - purge <id> <comment>: deletes the comment's file, retracted or not. Text: "purged <comment>\n". Data:
+//     {"id": the issue id, "comment": the comment id}.
+//   - version, help. help lists every command.
 //
 // A tag is non-empty with no space, ",", "[" or "]". When it has a ":", the part before the first ":" must be one of
 // the config's tag_groups. A milestone has no "/".
 //
 // An issue in data is {"id", "title", "status", "tags", "milestone", "due", "created", "updated", "github", "body"},
 // every key always present: tags is a list (never null), times are RFC 3339 UTC strings, github is a number (0 when
-// not synced), and empty text is "".
+// not synced), and empty text is "". Only show adds "comments".
+//
+// A comment in data is {"id", "kind", "by", "persona", "model", "at", "source", "body", "retracted"}, every key always
+// present: retracted is null for an active comment, and otherwise {"by", "at", "reason", "disproved_by"}, with ""
+// for no disproved_by.
 package cli
 
 import (
@@ -62,6 +87,7 @@ import (
 
 	"github.com/seriouslysean/cairn/internal/model"
 	"github.com/seriouslysean/cairn/internal/store"
+	"github.com/seriouslysean/cairn/internal/words"
 )
 
 // Env is everything a command touches outside its arguments. A nil Now means time.Now, a nil Rand means
@@ -109,6 +135,12 @@ func Run(args []string, env Env) int {
 		return runShow(env, args[1:])
 	case "ls":
 		return runLs(env, args[1:])
+	case "comment":
+		return runComment(env, args[1:])
+	case "retract":
+		return runRetract(env, args[1:])
+	case "purge":
+		return runPurge(env, args[1:])
 	default:
 		jsonOn := scanJSON(args[1:])
 		return fail(env, jsonOn, 2, "usage", fmt.Sprintf("unknown command %q", cmd))
@@ -221,7 +253,7 @@ func rmFlags() map[string]flagSpec {
 
 func showFlags() map[string]flagSpec {
 	return map[string]flagSpec{
-		"json": {false, false},
+		"json": {false, false}, "all": {false, false},
 	}
 }
 
@@ -229,6 +261,27 @@ func lsFlags() map[string]flagSpec {
 	return map[string]flagSpec{
 		"json": {false, false}, "status": {true, false}, "tag": {true, true},
 		"milestone": {true, false}, "due-before": {true, false},
+	}
+}
+
+func commentFlags() map[string]flagSpec {
+	return map[string]flagSpec{
+		"json": {false, false}, "as": {true, false}, "persona": {true, false},
+		"model": {true, false}, "kind": {true, false}, "source": {true, false},
+	}
+}
+
+func retractFlags() map[string]flagSpec {
+	return map[string]flagSpec{
+		"json": {false, false}, "as": {true, false}, "persona": {true, false},
+		"model": {true, false}, "reason": {true, false}, "disproved-by": {true, false},
+	}
+}
+
+func purgeFlags() map[string]flagSpec {
+	return map[string]flagSpec{
+		"json": {false, false}, "as": {true, false}, "persona": {true, false},
+		"model": {true, false},
 	}
 }
 
@@ -258,9 +311,9 @@ func runHelp(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "help takes no arguments")
 	}
 	if jsonOn {
-		return successJSON(env, "cairn init | new | edit | rm | show | ls | version | help")
+		return successJSON(env, "cairn init | new | edit | rm | show | ls | comment | retract | purge | version | help")
 	}
-	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n\nCommands:\n  init   new   edit   rm   show   ls   version   help\n")
+	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n\nCommands:\n  init   new   edit   rm   show   ls   comment   retract   purge   version   help\n")
 	return 0
 }
 
@@ -327,7 +380,6 @@ func runNew(env Env, args []string) int {
 		}
 	}
 
-	// Validate milestone.
 	milestone := ""
 	if vals, ok := res.values["milestone"]; ok {
 		milestone = vals[len(vals)-1]
@@ -336,7 +388,6 @@ func runNew(env Env, args []string) int {
 		}
 	}
 
-	// Validate due.
 	due := ""
 	if vals, ok := res.values["due"]; ok {
 		due = vals[len(vals)-1]
@@ -345,7 +396,6 @@ func runNew(env Env, args []string) int {
 		}
 	}
 
-	// Body.
 	body := ""
 	if vals, ok := res.values["body"]; ok {
 		body = vals[len(vals)-1]
@@ -354,7 +404,6 @@ func runNew(env Env, args []string) int {
 		body += "\n"
 	}
 
-	// Generate id.
 	newID, idErr := s.NewIssueID(env.Rand)
 	if idErr != nil {
 		return fail(env, jsonOn, 1, "error", idErr.Error())
@@ -412,7 +461,6 @@ func runEdit(env Env, args []string) int {
 		return fail(env, jsonOn, 1, "error", cfgErr.Error())
 	}
 
-	// Check that at least one change is specified.
 	_, hasTitle := res.values["title"]
 	_, hasBody := res.values["body"]
 	_, hasStatus := res.values["status"]
@@ -423,7 +471,6 @@ func runEdit(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "edit requires at least one change")
 	}
 
-	// Apply title.
 	if hasTitle {
 		newTitle := res.values["title"][len(res.values["title"])-1]
 		if strings.TrimSpace(newTitle) == "" {
@@ -432,7 +479,6 @@ func runEdit(env Env, args []string) int {
 		issue.Title = newTitle
 	}
 
-	// Apply body.
 	if hasBody {
 		newBody := res.values["body"][len(res.values["body"])-1]
 		if newBody != "" && !strings.HasSuffix(newBody, "\n") {
@@ -441,7 +487,6 @@ func runEdit(env Env, args []string) int {
 		issue.Body = newBody
 	}
 
-	// Apply status.
 	if hasStatus {
 		newStatus := res.values["status"][len(res.values["status"])-1]
 		if !statusValid(newStatus, cfg) {
@@ -450,7 +495,6 @@ func runEdit(env Env, args []string) int {
 		issue.Status = newStatus
 	}
 
-	// Apply tags.
 	if hasTags {
 		edits := res.values["tag"]
 		for _, e := range edits {
@@ -464,7 +508,6 @@ func runEdit(env Env, args []string) int {
 		}
 	}
 
-	// Apply milestone.
 	if hasMilestone {
 		newMilestone := res.values["milestone"][len(res.values["milestone"])-1]
 		if strings.Contains(newMilestone, "/") {
@@ -473,7 +516,6 @@ func runEdit(env Env, args []string) int {
 		issue.Milestone = newMilestone
 	}
 
-	// Apply due.
 	if hasDue {
 		newDue := res.values["due"][len(res.values["due"])-1]
 		if newDue != "" {
@@ -537,18 +579,30 @@ func runShow(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "show requires exactly one issue id")
 	}
 	issueID := res.positionals[0]
+	allComments := res.bools["all"]
 
 	s, sErr := store.Find(env.Dir)
 	if sErr != nil {
 		return storeFail(env, jsonOn, sErr, "")
 	}
-	issue, _, loadErr := s.LoadIssue(issueID)
+	issue, comments, loadErr := s.LoadIssue(issueID)
 	if loadErr != nil {
 		return storeFail(env, jsonOn, loadErr, issueID)
 	}
 
+	// Filter out retracted comments unless --all.
+	var shown []model.Comment
+	for _, c := range comments {
+		if !allComments && c.RetractedBy != "" {
+			continue
+		}
+		shown = append(shown, c)
+	}
+
 	if jsonOn {
-		return successJSON(env, issueToJSON(issue))
+		data := issueToJSONMap(issue, true)
+		data["comments"] = commentsToJSON(shown)
+		return successJSON(env, data)
 	}
 
 	fmt.Fprintf(env.Stdout, "id: %s\ntitle: %s\nstatus: %s\n", issue.ID, issue.Title, issue.Status)
@@ -565,6 +619,35 @@ func runShow(env Env, args []string) int {
 		issue.Created.Format(time.RFC3339Nano), issue.Updated.Format(time.RFC3339Nano))
 	if issue.Body != "" {
 		fmt.Fprintf(env.Stdout, "\n%s", issue.Body)
+	}
+	for _, c := range shown {
+		fmt.Fprintf(env.Stdout, "\n--- %s", c.ID)
+		if c.RetractedBy != "" {
+			fmt.Fprintf(env.Stdout, " [retracted]")
+		}
+		fmt.Fprintf(env.Stdout, " ---\n")
+		fmt.Fprintf(env.Stdout, "kind: %s\nby: %s\n", c.Kind, c.By)
+		if c.Persona != "" {
+			fmt.Fprintf(env.Stdout, "persona: %s\n", c.Persona)
+		}
+		if c.Model != "" {
+			fmt.Fprintf(env.Stdout, "model: %s\n", c.Model)
+		}
+		fmt.Fprintf(env.Stdout, "at: %s\n", c.At.Format(time.RFC3339Nano))
+		if c.Source != "" {
+			fmt.Fprintf(env.Stdout, "source: %s\n", c.Source)
+		}
+		if c.RetractedBy != "" {
+			fmt.Fprintf(env.Stdout, "retracted_by: %s\n", c.RetractedBy)
+			fmt.Fprintf(env.Stdout, "retracted_at: %s\n", c.RetractedAt.Format(time.RFC3339Nano))
+			fmt.Fprintf(env.Stdout, "retracted_reason: %s\n", c.RetractedReason)
+			if c.DisprovedBy != "" {
+				fmt.Fprintf(env.Stdout, "disproved_by: %s\n", c.DisprovedBy)
+			}
+		}
+		if c.Body != "" {
+			fmt.Fprintf(env.Stdout, "\n%s", c.Body)
+		}
 	}
 	return 0
 }
@@ -588,7 +671,6 @@ func runLs(env Env, args []string) int {
 		return fail(env, jsonOn, 1, "error", listErr.Error())
 	}
 
-	// Filters.
 	statusFilter := ""
 	if vals, ok := res.values["status"]; ok {
 		statusFilter = vals[len(vals)-1]
@@ -638,6 +720,264 @@ func runLs(env Env, args []string) int {
 	for _, iss := range filtered {
 		fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", iss.ID, iss.Status, iss.Title)
 	}
+	return 0
+}
+
+func runComment(env Env, args []string) int {
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, commentFlags())
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) != 2 {
+		return fail(env, jsonOn, 2, "usage", "comment requires exactly one issue id and one text")
+	}
+	issueID := res.positionals[0]
+	text := res.positionals[1]
+
+	// Validate kind.
+	kind := ""
+	if vals, ok := res.values["kind"]; ok {
+		kind = vals[len(vals)-1]
+	}
+	if kind != "evidence" && kind != "decision" && kind != "result" {
+		return fail(env, jsonOn, 2, "usage", "kind must be evidence, decision or result")
+	}
+
+	// Validate source for evidence.
+	source := ""
+	if vals, ok := res.values["source"]; ok {
+		source = vals[len(vals)-1]
+	}
+	if kind == "evidence" && strings.TrimSpace(source) == "" {
+		return fail(env, jsonOn, 2, "usage", "evidence requires --source")
+	}
+
+	// Validate text.
+	if strings.TrimSpace(text) == "" {
+		return fail(env, jsonOn, 2, "usage", "comment text must not be blank")
+	}
+
+	actor, actorErr := requireActor(env, res)
+	if actorErr != "" {
+		return fail(env, jsonOn, 2, "usage", actorErr)
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+
+	_, comments, loadErr := s.LoadIssue(issueID)
+	if loadErr != nil {
+		return storeFail(env, jsonOn, loadErr, issueID)
+	}
+
+	cfg, cfgErr := s.Config()
+	if cfgErr != nil {
+		return fail(env, jsonOn, 1, "error", cfgErr.Error())
+	}
+
+	// Check retracted comments for overlap warnings.
+	body := text
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+
+	type warning struct {
+		Comment string  `json:"comment"`
+		Reason  string  `json:"reason"`
+		Score   float64 `json:"score"`
+	}
+	var warnings []warning
+	for _, c := range comments {
+		if c.RetractedBy == "" {
+			continue
+		}
+		score := words.Overlap(text, c.Body)
+		if score >= cfg.DupeText {
+			warnings = append(warnings, warning{
+				Comment: c.ID,
+				Reason:  c.RetractedReason,
+				Score:   score,
+			})
+		}
+	}
+
+	// Generate new comment id.
+	commentID, idErr := s.NewCommentID(issueID, env.Rand)
+	if idErr != nil {
+		return storeFail(env, jsonOn, idErr, issueID)
+	}
+
+	// Get persona and model.
+	persona := ""
+	if vals, ok := res.values["persona"]; ok {
+		persona = vals[len(vals)-1]
+	}
+	modelName := ""
+	if vals, ok := res.values["model"]; ok {
+		modelName = vals[len(vals)-1]
+	}
+
+	now := env.stamp()
+	c := model.Comment{
+		ID:      commentID,
+		Kind:    kind,
+		By:      actor,
+		Persona: persona,
+		Model:   modelName,
+		At:      now,
+		Source:  source,
+		Body:    body,
+	}
+
+	if saveErr := s.SaveComment(issueID, c); saveErr != nil {
+		return fail(env, jsonOn, 1, "error", saveErr.Error())
+	}
+
+	// Print warnings.
+	for _, w := range warnings {
+		fmt.Fprintf(env.Stderr, "cairn: warning: matches retracted comment %s (reason %q)\n", w.Comment, w.Reason)
+	}
+
+	if jsonOn {
+		data := map[string]any{
+			"comment":  commentToJSON(c),
+			"warnings": warnings,
+		}
+		if warnings == nil {
+			data["warnings"] = []warning{}
+		}
+		return successJSON(env, data)
+	}
+	fmt.Fprintf(env.Stdout, "%s\n", commentID)
+	return 0
+}
+
+func runRetract(env Env, args []string) int {
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, retractFlags())
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) != 2 {
+		return fail(env, jsonOn, 2, "usage", "retract requires exactly one issue id and one comment id")
+	}
+	issueID := res.positionals[0]
+	commentID := res.positionals[1]
+
+	reason := ""
+	if vals, ok := res.values["reason"]; ok {
+		reason = vals[len(vals)-1]
+	}
+	if strings.TrimSpace(reason) == "" {
+		return fail(env, jsonOn, 2, "usage", "retract requires a non-blank --reason")
+	}
+
+	disprovedBy := ""
+	if vals, ok := res.values["disproved-by"]; ok {
+		disprovedBy = vals[len(vals)-1]
+	}
+	if disprovedBy != "" && disprovedBy == commentID {
+		return fail(env, jsonOn, 2, "usage", "disproved-by must not be the same comment as the one being retracted")
+	}
+
+	actor, actorErr := requireActor(env, res)
+	if actorErr != "" {
+		return fail(env, jsonOn, 2, "usage", actorErr)
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+
+	_, comments, loadErr := s.LoadIssue(issueID)
+	if loadErr != nil {
+		return storeFail(env, jsonOn, loadErr, issueID)
+	}
+
+	// Find the comment to retract.
+	var target *model.Comment
+	for idx := range comments {
+		if comments[idx].ID == commentID {
+			target = &comments[idx]
+			break
+		}
+	}
+	if target == nil {
+		return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q on issue %q", commentID, issueID))
+	}
+
+	// Check disproved-by exists if given.
+	if disprovedBy != "" {
+		found := false
+		for _, c := range comments {
+			if c.ID == disprovedBy {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q on issue %q", disprovedBy, issueID))
+		}
+	}
+
+	// Check not already retracted.
+	if target.RetractedBy != "" {
+		return fail(env, jsonOn, 1, "error", fmt.Sprintf("comment %q is already retracted", commentID))
+	}
+
+	// Apply retraction.
+	target.RetractedBy = actor
+	target.RetractedAt = env.stamp()
+	target.RetractedReason = reason
+	target.DisprovedBy = disprovedBy
+
+	if saveErr := s.SaveComment(issueID, *target); saveErr != nil {
+		return fail(env, jsonOn, 1, "error", saveErr.Error())
+	}
+
+	if jsonOn {
+		return successJSON(env, commentToJSON(*target))
+	}
+	fmt.Fprintf(env.Stdout, "retracted %s\n", commentID)
+	return 0
+}
+
+func runPurge(env Env, args []string) int {
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, purgeFlags())
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) != 2 {
+		return fail(env, jsonOn, 2, "usage", "purge requires exactly one issue id and one comment id")
+	}
+	issueID := res.positionals[0]
+	commentID := res.positionals[1]
+
+	if _, actorErr := requireActor(env, res); actorErr != "" {
+		return fail(env, jsonOn, 2, "usage", actorErr)
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+
+	if rmErr := s.RemoveComment(issueID, commentID); rmErr != nil {
+		if errors.Is(rmErr, store.ErrNoComment) {
+			return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q on issue %q", commentID, issueID))
+		}
+		return storeFail(env, jsonOn, rmErr, issueID)
+	}
+
+	if jsonOn {
+		return successJSON(env, map[string]string{"id": issueID, "comment": commentID})
+	}
+	fmt.Fprintf(env.Stdout, "purged %s\n", commentID)
 	return 0
 }
 
@@ -756,6 +1096,41 @@ func issueToJSONMap(i model.Issue, withBody bool) map[string]any {
 		m["body"] = i.Body
 	}
 	return m
+}
+
+func commentToJSON(c model.Comment) map[string]any {
+	m := map[string]any{
+		"id":      c.ID,
+		"kind":    c.Kind,
+		"by":      c.By,
+		"persona": c.Persona,
+		"model":   c.Model,
+		"at":      c.At.Format(time.RFC3339Nano),
+		"source":  c.Source,
+		"body":    c.Body,
+	}
+	if c.RetractedBy != "" {
+		m["retracted"] = map[string]any{
+			"by":           c.RetractedBy,
+			"at":           c.RetractedAt.Format(time.RFC3339Nano),
+			"reason":       c.RetractedReason,
+			"disproved_by": c.DisprovedBy,
+		}
+	} else {
+		m["retracted"] = nil
+	}
+	return m
+}
+
+func commentsToJSON(cs []model.Comment) []map[string]any {
+	if cs == nil {
+		return []map[string]any{}
+	}
+	result := make([]map[string]any, len(cs))
+	for i, c := range cs {
+		result[i] = commentToJSON(c)
+	}
+	return result
 }
 
 func successJSON(env Env, data any) int {

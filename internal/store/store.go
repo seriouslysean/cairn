@@ -19,12 +19,21 @@ var (
 	ErrNoTracker = errors.New("store: no .cairn folder here or above")
 	ErrExists    = errors.New("store: .cairn folder already exists")
 	ErrNotFound  = errors.New("store: no such issue")
+	// ErrNoComment is a missing comment on an issue that exists. errors.Is(ErrNoComment, ErrNotFound) is true.
+	ErrNoComment error = noComment{}
 )
+
+type noComment struct{}
+
+func (noComment) Error() string { return "store: no such comment" }
+
+func (noComment) Is(target error) bool { return target == ErrNotFound }
 
 // Store is an open .cairn folder. Dir is its path.
 //
-// Ids become paths, so every method checks them first: an issue id that fails id.Valid is ErrNotFound for reads
-// and an error for writes, and a comment id that fails id.ValidComment is an error.
+// Ids become paths, so every method checks them first. An issue id that fails id.Valid is ErrNotFound for reads and
+// removals and an error for saves. A comment id that fails id.ValidComment is ErrNotFound for removals and an error
+// for saves.
 type Store struct {
 	Dir string
 }
@@ -313,4 +322,25 @@ func (s *Store) RemoveIssue(issueID string) error {
 		return err
 	}
 	return os.RemoveAll(folder)
+}
+
+// RemoveComment deletes issues/<issueID>/<commentID>.md and nothing else, without reading it, so a file that does not
+// parse can still go. It returns ErrNotFound when the issue id is not valid or the issue does not exist, and
+// ErrNoComment when the comment id is not valid or the comment file does not exist.
+func (s *Store) RemoveComment(issueID, commentID string) error {
+	if !id.Valid(issueID) {
+		return ErrNotFound
+	}
+	folder := filepath.Join(s.Dir, "issues", issueID)
+	if _, err := os.Stat(filepath.Join(folder, "issue.md")); err != nil {
+		return ErrNotFound
+	}
+	if !id.ValidComment(commentID) {
+		return ErrNoComment
+	}
+	err := os.Remove(filepath.Join(folder, commentID+".md"))
+	if os.IsNotExist(err) {
+		return ErrNoComment
+	}
+	return err
 }
