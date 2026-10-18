@@ -40,7 +40,20 @@ Done when: all three packages pass their tests, use the standard library only, a
   - list issues;
   - new ids through `id.New` with `id.Length`.
 
-Tests are written first.
+The tests and the stubs (which panic with "todo") are in the repo.
+
+Drafter edits:
+- internal/id/id.go
+- internal/model/model.go
+- internal/store/store.go
+
+Read-only context:
+- docs/spec.md
+- internal/doc/front.go
+- internal/store/atomic.go
+- internal/id/id_test.go
+- internal/model/model_test.go
+- internal/store/store_test.go
 
 ## Step 3: commands
 `init`, `new`, `edit`, `rm`, `show` and `ls`, with `--json`, `--as` and `CAIRN_ACTOR`, and the exit codes from the spec.

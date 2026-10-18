@@ -79,3 +79,12 @@ func TestLength(t *testing.T) {
 		}
 	}
 }
+
+func TestValidComment(t *testing.T) {
+	for s, want := range map[string]bool{"c-x9k2": true, "c-0000": true, "x9k2": false, "c-x9k": false,
+		"c-x9k2a": false, "c-x9ki": false, "C-x9k2": false, "c_x9k2": false} {
+		if ValidComment(s) != want {
+			t.Errorf("ValidComment(%q) = %v", s, !want)
+		}
+	}
+}

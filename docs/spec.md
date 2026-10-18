@@ -36,7 +36,8 @@ github: 123
 ---
 What is wrong, why it matters, and what "done" means.
 ```
-`github` appears only after a sync. Dates are `YYYY-MM-DD`; times are UTC RFC 3339.
+`github` appears only after a sync. Dates are `YYYY-MM-DD`; times are UTC RFC 3339, with fractional seconds when the time has them, so comments made in
+the same second still sort in order.
 
 ### Comment
 ```
@@ -57,13 +58,16 @@ A retracted comment adds `retracted_by`, `retracted_at`, `retracted_reason` and,
 Same frontmatter as an issue (`id`, `title`, `status`, `due`), and a body. It has no comments.
 
 ### Config
+`config.yml` is frontmatter with an empty body, like every other file:
 ```
+---
 statuses: [backlog, open, in-progress, done]
 tag_groups: [severity, effort, area]
 github_repo: owner/name
 embeddings_url: http://127.0.0.1:8080/v1/embeddings
 dupe_text: 0.6
 dupe_meaning: 0.85
+---
 ```
 Every key is optional. Shown above with the defaults, except that `github_repo` and `embeddings_url` are off when absent.
 

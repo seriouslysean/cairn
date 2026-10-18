@@ -60,3 +60,8 @@ func Length(count int) int {
 	}
 	return 6
 }
+
+// ValidComment reports whether s is a comment id: "c-" followed by 4 characters from Alphabet.
+func ValidComment(s string) bool {
+	panic("todo: step 2")
+}
