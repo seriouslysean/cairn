@@ -300,3 +300,22 @@ func TestBadIDsNeverBecomePaths(t *testing.T) {
 		t.Error("a bad id wrote outside issues/")
 	}
 }
+
+func TestRemoveIssue(t *testing.T) {
+	s := newStore(t)
+	save(t, s, issue("7f3k", t0), comment("c-0001", t0))
+	if err := s.RemoveIssue("7f3k"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir, "issues", "7f3k")); !os.IsNotExist(err) {
+		t.Fatalf("folder still there: %v", err)
+	}
+	for _, bad := range []string{"7f3k", "../7f3k", "", "."} {
+		if err := s.RemoveIssue(bad); !errors.Is(err, ErrNotFound) {
+			t.Errorf("RemoveIssue(%q): %v", bad, err)
+		}
+	}
+	if _, err := os.Stat(s.Dir); err != nil {
+		t.Fatalf("RemoveIssue removed too much: %v", err)
+	}
+}
