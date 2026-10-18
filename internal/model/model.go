@@ -29,6 +29,9 @@ type Issue struct {
 	Tags      []string
 	Milestone string
 	Due       string
+	By        string // who created the issue; set once, never changed by an edit
+	Persona   string
+	Model     string
 	Created   time.Time
 	Updated   time.Time
 	GitHub    int

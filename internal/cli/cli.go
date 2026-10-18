@@ -24,8 +24,9 @@
 //     the id that was not found.
 //
 // Writes (new, edit, rm, comment, retract, purge) need an actor: --as, or else the CAIRN_ACTOR environment variable.
-// They also take --persona and --model. comment records them as by, persona and model, and retract records the actor
-// as retracted_by; the other writes check the actor but store it nowhere.
+// They also take --persona and --model. new records them on the issue as by, persona and model, once: no later write
+// changes them, and an issue without them keeps "". comment records them the same way on the comment, and retract
+// records the actor as retracted_by; the other writes check the actor but store it nowhere.
 //
 // Commands:
 //   - init: makes .cairn in Env.Dir (it does not look upward). Text: "initialized <the .cairn path>\n". Data:
@@ -40,7 +41,7 @@
 //     it; a removed tag only has to be non-empty, so a tag whose group left the config can still go. An empty
 //     --milestone or --due clears it. updated becomes Env.Now as in new. Text: the id and "\n". Data: the issue.
 //   - rm <id>: deletes the issue folder, comments included. Text: "removed <id>\n". Data: {"id": id}.
-//   - show <id> [--all]: Text: the issue for a person to read, then its active comments in order, each with its id,
+//   - show <id> [--all]: Text: the issue for a person to read, with its by, persona and model when set, then its active comments in order, each with its id,
 //     kind, by, persona and model when set, at, source when set, and body. --all adds the retracted comments in their
 //     places, each marked "retracted" with its retracted_by, retracted_at, reason and disproved_by. Data: the issue
 //     plus "comments", its active comments in order (all of them with --all), a list never null.
@@ -67,8 +68,8 @@
 // A tag is non-empty with no space, ",", "[" or "]". When it has a ":", the part before the first ":" must be one of
 // the config's tag_groups. A milestone has no "/".
 //
-// An issue in data is {"id", "title", "status", "tags", "milestone", "due", "created", "updated", "github", "body"},
-// every key always present: tags is a list (never null), times are RFC 3339 UTC strings, github is a number (0 when
+// An issue in data is {"id", "title", "status", "tags", "milestone", "due", "by", "persona", "model", "created",
+// "updated", "github", "body"}, every key always present: tags is a list (never null), times are RFC 3339 UTC strings, github is a number (0 when
 // not synced), and empty text is "". Only show adds "comments".
 //
 // A comment in data is {"id", "kind", "by", "persona", "model", "at", "source", "body", "retracted"}, every key always
