@@ -103,20 +103,17 @@ func ParseIssue(fields []doc.Field, body []byte) (Issue, error) {
 			extra = append(extra, f)
 			continue
 		}
+		if err := checkShape(f, f.Key == "tags"); err != nil {
+			return Issue{}, err
+		}
 		switch f.Key {
 		case "id":
 			i.ID = f.Value
 		case "title":
-			if f.IsList {
-				return Issue{}, fmt.Errorf("model: title must be a scalar, not a list")
-			}
 			i.Title = f.Value
 		case "status":
 			i.Status = f.Value
 		case "tags":
-			if !f.IsList {
-				return Issue{}, fmt.Errorf("model: tags must be a list")
-			}
 			i.Tags = f.List
 		case "milestone":
 			i.Milestone = f.Value
@@ -212,6 +209,9 @@ func ParseComment(fields []doc.Field, body []byte) (Comment, error) {
 		if !commentKnownKeys[f.Key] {
 			extra = append(extra, f)
 			continue
+		}
+		if err := checkShape(f, false); err != nil {
+			return Comment{}, err
 		}
 		switch f.Key {
 		case "id":
@@ -316,6 +316,9 @@ func ParseMilestone(fields []doc.Field, body []byte) (Milestone, error) {
 			extra = append(extra, f)
 			continue
 		}
+		if err := checkShape(f, false); err != nil {
+			return Milestone{}, err
+		}
 		switch f.Key {
 		case "id":
 			m.ID = f.Value
@@ -377,16 +380,13 @@ func ParseConfig(fields []doc.Field) (Config, error) {
 			extra = append(extra, f)
 			continue
 		}
+		if err := checkShape(f, f.Key == "statuses" || f.Key == "tag_groups"); err != nil {
+			return Config{}, err
+		}
 		switch f.Key {
 		case "statuses":
-			if !f.IsList {
-				return Config{}, fmt.Errorf("model: statuses must be a list")
-			}
 			c.Statuses = f.List
 		case "tag_groups":
-			if !f.IsList {
-				return Config{}, fmt.Errorf("model: tag_groups must be a list")
-			}
 			c.TagGroups = f.List
 		case "github_repo":
 			c.GitHubRepo = f.Value
@@ -430,4 +430,15 @@ func (c Config) Fields() []doc.Field {
 	)
 	fields = append(fields, c.Extra...)
 	return fields
+}
+
+// checkShape returns an error when f is a list and list is false, or the reverse.
+func checkShape(f doc.Field, list bool) error {
+	switch {
+	case list && !f.IsList:
+		return fmt.Errorf("model: %s must be a list", f.Key)
+	case !list && f.IsList:
+		return fmt.Errorf("model: %s must be a scalar, not a list", f.Key)
+	}
+	return nil
 }

@@ -1,4 +1,3 @@
-// Package store reads and writes the .cairn folder.
 package store
 
 import (
@@ -94,6 +93,9 @@ func (s *Store) Config() (model.Config, error) {
 // files in the folder, temporary ones included, are ignored. It returns ErrNotFound when the folder or issue.md is
 // missing, and an error when a file's id does not match its folder or file name.
 func (s *Store) LoadIssue(idStr string) (model.Issue, []model.Comment, error) {
+	if !id.Valid(idStr) {
+		return model.Issue{}, nil, ErrNotFound
+	}
 	folder := filepath.Join(s.Dir, "issues", idStr)
 	entries, err := os.ReadDir(folder)
 	if err != nil {
@@ -161,6 +163,9 @@ func (s *Store) LoadIssue(idStr string) (model.Issue, []model.Comment, error) {
 
 // SaveIssue writes issues/<i.ID>/issue.md, making the folder when needed. It leaves comment files alone.
 func (s *Store) SaveIssue(i model.Issue) error {
+	if !id.Valid(i.ID) {
+		return fmt.Errorf("store: bad issue id %q", i.ID)
+	}
 	folder := filepath.Join(s.Dir, "issues", i.ID)
 	if err := os.MkdirAll(folder, 0o755); err != nil {
 		return err
@@ -174,6 +179,12 @@ func (s *Store) SaveIssue(i model.Issue) error {
 
 // SaveComment writes issues/<issueID>/<c.ID>.md. It returns ErrNotFound when the issue does not exist.
 func (s *Store) SaveComment(issueID string, c model.Comment) error {
+	if !id.Valid(issueID) {
+		return ErrNotFound
+	}
+	if !id.ValidComment(c.ID) {
+		return fmt.Errorf("store: bad comment id %q", c.ID)
+	}
 	folder := filepath.Join(s.Dir, "issues", issueID)
 	if _, err := os.Stat(filepath.Join(folder, "issue.md")); err != nil {
 		return ErrNotFound
@@ -205,17 +216,24 @@ func (s *Store) ListIssues() ([]model.Issue, error) {
 		if !id.Valid(e.Name()) {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(issuesDir, e.Name(), "issue.md"))
-		if err != nil {
+		path := filepath.Join(issuesDir, e.Name(), "issue.md")
+		data, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
 			continue
+		}
+		if err != nil {
+			return nil, err
 		}
 		fields, body, err := doc.Parse(data)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("store: %s: %w", path, err)
 		}
 		issue, err := model.ParseIssue(fields, body)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("store: %s: %w", path, err)
+		}
+		if issue.ID != e.Name() {
+			return nil, fmt.Errorf("store: issue id %q does not match folder %q", issue.ID, e.Name())
 		}
 		issues = append(issues, issue)
 	}
@@ -251,6 +269,9 @@ func (s *Store) NewIssueID(r io.Reader) (string, error) {
 // NewCommentID returns "c-" plus 4 characters from id.New, unused among the issue's comments. It returns ErrNotFound
 // when the issue does not exist.
 func (s *Store) NewCommentID(issueID string, r io.Reader) (string, error) {
+	if !id.Valid(issueID) {
+		return "", ErrNotFound
+	}
 	folder := filepath.Join(s.Dir, "issues", issueID)
 	if _, err := os.Stat(filepath.Join(folder, "issue.md")); err != nil {
 		return "", ErrNotFound
