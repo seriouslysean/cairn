@@ -212,8 +212,21 @@ func TestMilestoneWritesNeedAnActor(t *testing.T) {
 
 func TestMilestoneSubcommands(t *testing.T) {
 	tr := newTracker(t)
-	for _, args := range [][]string{{"milestone"}, {"milestone", "rm", "v1"}, {"milestone", "show", "v1"}} {
+	// The subcommand comes right after milestone, so a flag's value is never taken for it.
+	for _, args := range [][]string{{"milestone"}, {"milestone", "rm", "v1"}, {"milestone", "show", "v1"},
+		{"milestone", "--as", "bob", "new", "v1", "One"}} {
 		tr.wantError(2, "usage", args...)
+	}
+	for _, args := range [][]string{
+		{"milestone", "--as", "bob", "new", "v1", "One"},
+		{"milestone", "--", "new", "v1", "One"},
+	} {
+		if code, out, errOut := tr.run(args...); code != 2 || out != "" || strings.Contains(errOut, `"bob"`) {
+			t.Fatalf("%q: exit %d, %q, %q", args, code, out, errOut)
+		}
+	}
+	if _, err := os.Stat(tr.milestonePath("v1")); !os.IsNotExist(err) {
+		t.Fatalf("a usage error wrote a file: %v", err)
 	}
 	empty := &tracker{t: t, dir: t.TempDir(), now: t0, env: map[string]string{"CAIRN_ACTOR": "alice"}, rnd: &seq{}}
 	empty.wantError(1, "no_tracker", "milestone", "new", "v1", "One")

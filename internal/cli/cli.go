@@ -79,7 +79,8 @@
 //     change is required. The title must not be blank, the status must be one of the config's, and an empty --due
 //     clears it. The file's other keys and its body are kept. A milestone without a file is not_found, and a file
 //     that does not parse is an "error". Text: the id and "\n". Data: the milestone.
-//   - milestone with no subcommand, or any other subcommand, is a usage error.
+//   - milestone with no subcommand, or any other subcommand, is a usage error. The subcommand is the argument right
+//     after milestone.
 //   - search <words>...: the positional arguments joined by spaces are the query, and its words are words.Split of
 //     it; a query with no words is a usage error. An issue's matches are the query words found among the words of
 //     its title, its body, and the bodies and sources of its active comments; tags are not searched. Issues with at
