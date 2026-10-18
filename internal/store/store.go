@@ -393,15 +393,53 @@ func (s *Store) ListMilestones() ([]model.Milestone, error) {
 	return milestones, nil
 }
 
+// validMilestoneID reports whether id can name a milestone file: non-empty, no "/", not starting with ".".
+func validMilestoneID(idStr string) bool {
+	return idStr != "" && !strings.Contains(idStr, "/") && !strings.HasPrefix(idStr, ".")
+}
+
 // LoadMilestone reads milestones/<id>.md. It returns ErrNotFound when the file is missing or the id cannot name one
 // (empty, with a "/", or starting with "."), and an error when the file does not parse or its id does not match its
 // file name.
 func (s *Store) LoadMilestone(idStr string) (model.Milestone, error) {
-	panic("todo: step 6")
+	if !validMilestoneID(idStr) {
+		return model.Milestone{}, ErrNotFound
+	}
+	path := filepath.Join(s.Dir, "milestones", idStr+".md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return model.Milestone{}, ErrNotFound
+		}
+		return model.Milestone{}, err
+	}
+	fields, body, err := doc.Parse(data)
+	if err != nil {
+		return model.Milestone{}, fmt.Errorf("store: %s: %w", idStr+".md", err)
+	}
+	m, err := model.ParseMilestone(fields, body)
+	if err != nil {
+		return model.Milestone{}, fmt.Errorf("store: %s: %w", idStr+".md", err)
+	}
+	if m.ID != idStr {
+		return model.Milestone{}, fmt.Errorf("store: milestone id %q does not match file name %q", m.ID, idStr+".md")
+	}
+	return m, nil
 }
 
 // SaveMilestone writes milestones/<m.ID>.md, making the folder when needed. An id that is empty, has a "/" or starts
 // with "." is an error.
 func (s *Store) SaveMilestone(m model.Milestone) error {
-	panic("todo: step 6")
+	if !validMilestoneID(m.ID) {
+		return fmt.Errorf("store: bad milestone id %q", m.ID)
+	}
+	dir := filepath.Join(s.Dir, "milestones")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	data, err := doc.Format(m.Fields(), []byte(m.Body))
+	if err != nil {
+		return err
+	}
+	return WriteFileAtomic(filepath.Join(dir, m.ID+".md"), data, 0o644)
 }

@@ -321,6 +321,21 @@ func purgeFlags() map[string]flagSpec {
 	}
 }
 
+func milestoneNewFlags() map[string]flagSpec {
+	return map[string]flagSpec{
+		"json": {false, false}, "as": {true, false}, "persona": {true, false},
+		"model": {true, false}, "due": {true, false},
+	}
+}
+
+func milestoneEditFlags() map[string]flagSpec {
+	return map[string]flagSpec{
+		"json": {false, false}, "as": {true, false}, "persona": {true, false},
+		"model": {true, false}, "title": {true, false}, "status": {true, false},
+		"due": {true, false},
+	}
+}
+
 func runVersion(env Env, args []string) int {
 	jsonOn := scanJSON(args)
 	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
@@ -1239,8 +1254,211 @@ func runSearch(env Env, args []string) int {
 	return 0
 }
 
+// validMilestoneID reports whether id can name a milestone file: non-empty, no "/", not starting with ".".
+func validMilestoneID(id string) bool {
+	return id != "" && !strings.Contains(id, "/") && !strings.HasPrefix(id, ".")
+}
+
 func runMilestone(env Env, args []string) int {
-	panic("todo: step 6")
+	jsonOn := scanJSON(args)
+	// Find the first positional argument (not a flag, not "--") as the subcommand.
+	sub := ""
+	subIdx := -1
+	for i, a := range args {
+		if a == "--" {
+			break
+		}
+		if strings.HasPrefix(a, "--") {
+			continue
+		}
+		sub = a
+		subIdx = i
+		break
+	}
+	if sub == "" {
+		return fail(env, jsonOn, 2, "usage", "milestone requires a subcommand: new or edit")
+	}
+	switch sub {
+	case "new":
+		return runMilestoneNew(env, args[subIdx+1:])
+	case "edit":
+		return runMilestoneEdit(env, args[subIdx+1:])
+	default:
+		return fail(env, jsonOn, 2, "usage", fmt.Sprintf("unknown milestone subcommand %q", sub))
+	}
+}
+
+func runMilestoneNew(env Env, args []string) int {
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, milestoneNewFlags())
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) != 2 {
+		return fail(env, jsonOn, 2, "usage", "milestone new requires exactly one id and one title")
+	}
+	id := res.positionals[0]
+	title := res.positionals[1]
+
+	if !validMilestoneID(id) {
+		return fail(env, jsonOn, 2, "usage", "milestone id must not be empty, contain \"/\" or start with \".\"")
+	}
+	if strings.TrimSpace(title) == "" {
+		return fail(env, jsonOn, 2, "usage", "milestone title must not be blank")
+	}
+
+	due := ""
+	if vals, ok := res.values["due"]; ok {
+		due = vals[len(vals)-1]
+		if due != "" {
+			if errStr := validateDate(due); errStr != "" {
+				return fail(env, jsonOn, 2, "usage", errStr)
+			}
+		}
+	}
+
+	if _, actorErr := requireActor(env, res); actorErr != "" {
+		return fail(env, jsonOn, 2, "usage", actorErr)
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+	cfg, cfgErr := s.Config()
+	if cfgErr != nil {
+		return fail(env, jsonOn, 1, "error", cfgErr.Error())
+	}
+	if len(cfg.Statuses) == 0 {
+		return fail(env, jsonOn, 1, "error", "config.yml lists no statuses")
+	}
+
+	// Check whether a milestone file already exists for this id.
+	_, loadErr := s.LoadMilestone(id)
+	if loadErr != nil {
+		if errors.Is(loadErr, store.ErrNotFound) {
+			// No file yet; proceed to create.
+		} else {
+			return fail(env, jsonOn, 1, "error", loadErr.Error())
+		}
+	} else {
+		return fail(env, jsonOn, 1, "exists", fmt.Sprintf("milestone %q already exists", id))
+	}
+
+	m := model.Milestone{
+		ID:     id,
+		Title:  title,
+		Status: cfg.Statuses[0],
+		Due:    due,
+	}
+	if saveErr := s.SaveMilestone(m); saveErr != nil {
+		return fail(env, jsonOn, 1, "error", saveErr.Error())
+	}
+
+	if jsonOn {
+		return successJSON(env, milestoneToJSON(m))
+	}
+	fmt.Fprintf(env.Stdout, "%s\n", id)
+	return 0
+}
+
+func runMilestoneEdit(env Env, args []string) int {
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, milestoneEditFlags())
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) != 1 {
+		return fail(env, jsonOn, 2, "usage", "milestone edit requires exactly one milestone id")
+	}
+	id := res.positionals[0]
+
+	_, hasTitle := res.values["title"]
+	_, hasStatus := res.values["status"]
+	_, hasDue := res.values["due"]
+	if !hasTitle && !hasStatus && !hasDue {
+		return fail(env, jsonOn, 2, "usage", "milestone edit requires at least one change")
+	}
+
+	if hasTitle {
+		newTitle := res.values["title"][len(res.values["title"])-1]
+		if strings.TrimSpace(newTitle) == "" {
+			return fail(env, jsonOn, 2, "usage", "milestone title must not be blank")
+		}
+	}
+
+	if hasStatus {
+		newStatus := res.values["status"][len(res.values["status"])-1]
+		if newStatus == "" {
+			return fail(env, jsonOn, 2, "usage", "milestone status must not be blank")
+		}
+	}
+
+	if hasDue {
+		newDue := res.values["due"][len(res.values["due"])-1]
+		if newDue != "" {
+			if errStr := validateDate(newDue); errStr != "" {
+				return fail(env, jsonOn, 2, "usage", errStr)
+			}
+		}
+	}
+
+	if _, actorErr := requireActor(env, res); actorErr != "" {
+		return fail(env, jsonOn, 2, "usage", actorErr)
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+
+	m, loadErr := s.LoadMilestone(id)
+	if loadErr != nil {
+		if errors.Is(loadErr, store.ErrNotFound) {
+			return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no milestone %q", id))
+		}
+		return fail(env, jsonOn, 1, "error", loadErr.Error())
+	}
+
+	cfg, cfgErr := s.Config()
+	if cfgErr != nil {
+		return fail(env, jsonOn, 1, "error", cfgErr.Error())
+	}
+
+	if hasStatus {
+		newStatus := res.values["status"][len(res.values["status"])-1]
+		if !statusValid(newStatus, cfg) {
+			return fail(env, jsonOn, 2, "usage", fmt.Sprintf("status %q is not valid", newStatus))
+		}
+		m.Status = newStatus
+	}
+
+	if hasTitle {
+		m.Title = res.values["title"][len(res.values["title"])-1]
+	}
+
+	if hasDue {
+		m.Due = res.values["due"][len(res.values["due"])-1]
+	}
+
+	if saveErr := s.SaveMilestone(m); saveErr != nil {
+		return fail(env, jsonOn, 1, "error", saveErr.Error())
+	}
+
+	if jsonOn {
+		return successJSON(env, milestoneToJSON(m))
+	}
+	fmt.Fprintf(env.Stdout, "%s\n", id)
+	return 0
+}
+
+func milestoneToJSON(m model.Milestone) map[string]any {
+	return map[string]any{
+		"id":     m.ID,
+		"title":  m.Title,
+		"status": m.Status,
+		"due":    m.Due,
+	}
 }
 
 func validateTag(t string, cfg model.Config) string {
