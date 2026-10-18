@@ -110,8 +110,24 @@ Read-only context:
 - internal/cli/lists_test.go
 - internal/store/store_test.go
 
+## Step 6: milestone commands
+`milestone new` and `milestone edit`, so an agent never has to write a milestone file by hand. They set the id, title,
+status and due date; the body stays hand-written. The contract is the package comment in `internal/cli/cli.go`.
+
+Drafter edits:
+- internal/cli/cli.go
+- internal/store/store.go
+
+Read-only context:
+- docs/spec.md
+- internal/model/model.go
+- internal/cli/cli_test.go
+- internal/cli/lists_test.go
+- internal/cli/milestone_test.go
+- internal/store/store_test.go
+
 ## Version 0.1.0
-A working tracker on one checkout: steps 1 to 5 (with 4b), then the release step below. Everything under "Later" comes after.
+A working tracker on one checkout: steps 1 to 6 (with 4b), then the release step below. Everything under "Later" comes after.
 
 Release step:
 - CI runs `scripts/check.sh` on every pull request, and `go vet` and `go test` on Go 1.24, the oldest version `go.mod`

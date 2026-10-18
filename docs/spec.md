@@ -63,7 +63,8 @@ The last row is dropped when the file has no trailing newline.
 A retracted comment adds `retracted_by`, `retracted_at`, `retracted_reason` and, optionally, `disproved_by: c-ab12`.
 
 ### Milestone
-Same frontmatter as an issue (`id`, `title`, `status`, `due`), and a body. It has no comments.
+Same frontmatter as an issue (`id`, `title`, `status`, `due`), and a body. It has no comments. Its status is one of the
+config's statuses. Commands keep the body but don't write it; it is edited by hand.
 
 ### Config
 `config.yml` is frontmatter with an empty body, like every other file:
@@ -90,6 +91,7 @@ Every key is optional. Shown above with the defaults, except that `github_repo` 
 |---|---|
 | Start | `cairn init` |
 | Lists | `cairn tags`, `cairn milestones`, `cairn ls [--status s] [--tag t] [--milestone m] [--due-before d] [--branches]` |
+| Milestones | `cairn milestone new <id> "title" [--due d]`, `cairn milestone edit <id> [--title t] [--status s] [--due d]` |
 | Add | `cairn new "title" [--body text] [--tag t]... [--milestone m] [--due d]` |
 | Edit | `cairn edit <id> [--title t] [--body text] [--status s] [--tag +t] [--tag -t] [--milestone m] [--due d]` |
 | Delete | `cairn rm <id>` |

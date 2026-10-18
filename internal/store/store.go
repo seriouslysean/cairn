@@ -392,3 +392,16 @@ func (s *Store) ListMilestones() ([]model.Milestone, error) {
 	})
 	return milestones, nil
 }
+
+// LoadMilestone reads milestones/<id>.md. It returns ErrNotFound when the file is missing or the id cannot name one
+// (empty, with a "/", or starting with "."), and an error when the file does not parse or its id does not match its
+// file name.
+func (s *Store) LoadMilestone(idStr string) (model.Milestone, error) {
+	panic("todo: step 6")
+}
+
+// SaveMilestone writes milestones/<m.ID>.md, making the folder when needed. An id that is empty, has a "/" or starts
+// with "." is an error.
+func (s *Store) SaveMilestone(m model.Milestone) error {
+	panic("todo: step 6")
+}
