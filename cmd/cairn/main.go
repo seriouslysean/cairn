@@ -5,11 +5,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 
 	"github.com/seriouslysean/cairn/internal/cli"
 )
 
-var version = "0.0.0-dev"
+// version is the main module's version as Go recorded it in the binary: the tag for go install …@v0.1.0 or a build
+// in a tagged checkout, a pseudo-version for other commits, and "(devel)" when Go recorded none.
+func version() string {
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" {
+		return bi.Main.Version
+	}
+	return "(devel)"
+}
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
@@ -19,5 +27,5 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "cairn:", err)
 		return 1
 	}
-	return cli.Run(args, cli.Env{Version: version, Dir: dir, Stdout: stdout, Stderr: stderr, Getenv: os.Getenv})
+	return cli.Run(args, cli.Env{Version: version(), Dir: dir, Stdout: stdout, Stderr: stderr, Getenv: os.Getenv})
 }
