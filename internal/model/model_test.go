@@ -285,3 +285,28 @@ func TestConfigOverrides(t *testing.T) {
 		}
 	}
 }
+
+// Every key is either a scalar or a list; the wrong shape is an error, never a silently dropped value.
+func TestParseRejectsWrongShape(t *testing.T) {
+	for _, c := range []struct{ old, new string }{
+		{"milestone: v0.4", "milestone: [v0.4]"},
+		{"status: in-progress", "status: [in-progress]"},
+	} {
+		if _, err := ParseIssue(split(t, strings.Replace(specIssue, c.old, c.new, 1))); err == nil {
+			t.Errorf("issue %q: want an error", c.new)
+		}
+	}
+	for _, c := range []struct{ old, new string }{
+		{"persona: skeptic", "persona: [skeptic]"},
+		{"source: export_test.go:42", "source: [export_test.go:42]"},
+		{"retracted_reason: the test was wrong", "retracted_reason: [x]"},
+	} {
+		if _, err := ParseComment(split(t, strings.Replace(specComment, c.old, c.new, 1))); err == nil {
+			t.Errorf("comment %q: want an error", c.new)
+		}
+	}
+	f, _ := split(t, "---\ngithub_repo: [owner/name]\n---\n")
+	if _, err := ParseConfig(f); err == nil {
+		t.Error("config github_repo list: want an error")
+	}
+}

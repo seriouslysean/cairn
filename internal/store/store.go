@@ -23,6 +23,9 @@ var (
 )
 
 // Store is an open .cairn folder. Dir is its path.
+//
+// Ids become paths, so every method checks them first: an issue id that fails id.Valid is ErrNotFound for reads
+// and an error for writes, and a comment id that fails id.ValidComment is an error.
 type Store struct {
 	Dir string
 }
@@ -183,7 +186,8 @@ func (s *Store) SaveComment(issueID string, c model.Comment) error {
 }
 
 // ListIssues reads issue.md from every issue folder, sorted by Created, then by ID, without reading comments. Entries
-// in issues/ whose name is not a valid id are ignored. A missing issues folder gives an empty list.
+// in issues/ whose name is not a valid id, and folders without issue.md, are ignored. A file that does not parse, or
+// whose id does not match its folder, is an error. A missing issues folder gives an empty list.
 func (s *Store) ListIssues() ([]model.Issue, error) {
 	issuesDir := filepath.Join(s.Dir, "issues")
 	entries, err := os.ReadDir(issuesDir)

@@ -1,7 +1,7 @@
 // Package model holds Cairn's issues, comments, milestones and config, and converts each to and from the
 // frontmatter fields of its file.
 //
-// Parsing checks the shape of each value (ids, dates, times, numbers, lists) but not statuses, tags or kinds against
+// Parsing checks the shape of each value (ids, dates, times, numbers, and scalar or list) but not statuses, tags or kinds against
 // the config: a config change must never stop an old file from loading. Keys the parser does not know are kept, in
 // order, in Extra (nil when there are none), and written back after the known keys, so a file from a newer Cairn
 // survives an edit.
