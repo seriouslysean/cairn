@@ -457,6 +457,12 @@ func TestLaterFlagsRejected(t *testing.T) {
 	tr.wantError(2, "usage", "ls", "--branches")
 }
 
+// new does not look for duplicates (issues #15 and #16), so it has no --force.
+func TestNewHasNoForce(t *testing.T) {
+	tr := newTracker(t)
+	tr.wantError(2, "usage", "new", "a", "--force")
+}
+
 // A tag can always be removed, even when its group has left the config.
 func TestRemoveStaleTag(t *testing.T) {
 	tr := newTracker(t)
