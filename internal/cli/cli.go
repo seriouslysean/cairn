@@ -5,7 +5,8 @@
 // takes the next argument even when it starts with "-", so "--tag -t" works, but not one that starts with "--": that
 // is a missing value, and "--name=--value" passes such a value. --tag can be repeated; for any other flag the last
 // one wins. No arguments at all is a usage error. "--help" and "-h" mean help, and "--version" means version.
-// --branches, which a later step builds, is a usage error until then, and so is --all anywhere but show.
+// --branches and search --meaning, which later steps build, are usage errors until then, and so is --all anywhere but
+// show.
 //
 // Output: --json anywhere before "--" turns on JSON, even when the other arguments are wrong. With --json, success
 // prints {"ok": true, "data": …} and failure prints
@@ -62,7 +63,21 @@
 //     <comment>\n". Data: the comment.
 //   - purge <id> <comment>: deletes the comment's file, retracted or not. Text: "purged <comment>\n". Data:
 //     {"id": the issue id, "comment": the comment id}.
-//   - version, help. help lists every command.
+//   - tags: every tag on any issue, with the number of issues that have it (an issue counts once), sorted by tag in
+//     byte order. Text: one "<tag>\t<count>\n" line per tag. Data: a list of {"tag", "count"} (an empty list, never
+//     null).
+//   - milestones: every milestone with a file in milestones/ and every milestone an issue names, with the number of
+//     issues that name it. A milestone without a file has "" for title, status and due. Sorted by due, those without
+//     one last, then by id. Text: one "<id>\t<due>\t<issues>\t<title>\n" line each. Data: a list of {"id", "title",
+//     "status", "due", "issues"} (an empty list, never null).
+//   - search <words>...: the positional arguments joined by spaces are the query, and its words are words.Split of
+//     it; a query with no words is a usage error. An issue's matches are the query words found among the words of
+//     its title, its body, and the bodies and sources of its active comments; tags are not searched. Issues with at
+//     least one match are listed by matches, most first, then in store order. Text: one
+//     "<id>\t<matches>\t<title>\n" line each. Data: a list of issues without "body", each with "matches" added (an
+//     empty list, never null, when nothing matches).
+//   - version, help. help lists every command, and its text ends with the line "Cairn does not look for duplicates:
+//     run cairn search before cairn new."
 //
 // A tag is non-empty with no space, ",", "[" or "]". When it has a ":", the part before the first ":" must be one of
 // the config's tag_groups. A milestone has no "/".
@@ -82,6 +97,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -141,6 +157,12 @@ func Run(args []string, env Env) int {
 		return runRetract(env, args[1:])
 	case "purge":
 		return runPurge(env, args[1:])
+	case "tags":
+		return runTags(env, args[1:])
+	case "milestones":
+		return runMilestones(env, args[1:])
+	case "search":
+		return runSearch(env, args[1:])
 	default:
 		jsonOn := scanJSON(args[1:])
 		return fail(env, jsonOn, 2, "usage", fmt.Sprintf("unknown command %q", cmd))
@@ -311,9 +333,11 @@ func runHelp(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "help takes no arguments")
 	}
 	if jsonOn {
-		return successJSON(env, "cairn init | new | edit | rm | show | ls | comment | retract | purge | version | help")
+		return successJSON(env, "cairn init | new | edit | rm | show | ls | comment | retract | purge | tags | milestones | search | version | help")
 	}
-	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n\nCommands:\n  init   new   edit   rm   show   ls   comment   retract   purge   version   help\n")
+	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n\nCommands:\n"+
+		"  init   new   edit   rm   show   ls   comment   retract   purge   tags   milestones   search   version   help\n\n"+
+		"Cairn does not look for duplicates: run cairn search before cairn new.\n")
 	return 0
 }
 
@@ -978,6 +1002,226 @@ func runPurge(env Env, args []string) int {
 		return successJSON(env, map[string]string{"id": issueID, "comment": commentID})
 	}
 	fmt.Fprintf(env.Stdout, "purged %s\n", commentID)
+	return 0
+}
+
+func runTags(env Env, args []string) int {
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) > 0 {
+		return fail(env, jsonOn, 2, "usage", "tags takes no positional arguments")
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+	issues, listErr := s.ListIssues()
+	if listErr != nil {
+		return fail(env, jsonOn, 1, "error", listErr.Error())
+	}
+
+	counts := map[string]int{}
+	for _, iss := range issues {
+		seen := map[string]bool{}
+		for _, t := range iss.Tags {
+			if !seen[t] {
+				seen[t] = true
+				counts[t]++
+			}
+		}
+	}
+
+	type tagEntry struct {
+		Tag   string `json:"tag"`
+		Count int    `json:"count"`
+	}
+	entries := make([]tagEntry, 0, len(counts))
+	for t, c := range counts {
+		entries = append(entries, tagEntry{Tag: t, Count: c})
+	}
+	sort.Slice(entries, func(a, b int) bool {
+		return entries[a].Tag < entries[b].Tag
+	})
+
+	if jsonOn {
+		return successJSON(env, entries)
+	}
+	for _, e := range entries {
+		fmt.Fprintf(env.Stdout, "%s\t%d\n", e.Tag, e.Count)
+	}
+	return 0
+}
+
+func runMilestones(env Env, args []string) int {
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) > 0 {
+		return fail(env, jsonOn, 2, "usage", "milestones takes no positional arguments")
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+	milestones, listErr := s.ListMilestones()
+	if listErr != nil {
+		return fail(env, jsonOn, 1, "error", listErr.Error())
+	}
+	issues, issueErr := s.ListIssues()
+	if issueErr != nil {
+		return fail(env, jsonOn, 1, "error", issueErr.Error())
+	}
+
+	issueCounts := map[string]int{}
+	for _, iss := range issues {
+		if iss.Milestone != "" {
+			issueCounts[iss.Milestone]++
+		}
+	}
+
+	type milestoneEntry struct {
+		ID     string `json:"id"`
+		Title  string `json:"title"`
+		Status string `json:"status"`
+		Due    string `json:"due"`
+		Issues int    `json:"issues"`
+	}
+
+	seen := map[string]bool{}
+	entries := []milestoneEntry{}
+	for _, m := range milestones {
+		seen[m.ID] = true
+		entries = append(entries, milestoneEntry{
+			ID: m.ID, Title: m.Title, Status: m.Status, Due: m.Due,
+			Issues: issueCounts[m.ID],
+		})
+	}
+	for _, iss := range issues {
+		if iss.Milestone != "" && !seen[iss.Milestone] {
+			seen[iss.Milestone] = true
+			entries = append(entries, milestoneEntry{
+				ID: iss.Milestone, Title: "", Status: "", Due: "",
+				Issues: issueCounts[iss.Milestone],
+			})
+		}
+	}
+
+	sort.Slice(entries, func(a, b int) bool {
+		da, db := entries[a].Due, entries[b].Due
+		if da != db {
+			if da == "" {
+				return false
+			}
+			if db == "" {
+				return true
+			}
+			return da < db
+		}
+		return entries[a].ID < entries[b].ID
+	})
+
+	if jsonOn {
+		return successJSON(env, entries)
+	}
+	for _, e := range entries {
+		fmt.Fprintf(env.Stdout, "%s\t%s\t%d\t%s\n", e.ID, e.Due, e.Issues, e.Title)
+	}
+	return 0
+}
+
+func runSearch(env Env, args []string) int {
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) == 0 {
+		return fail(env, jsonOn, 2, "usage", "search requires at least one word")
+	}
+
+	query := strings.Join(res.positionals, " ")
+	queryWords := words.Split(query)
+	if len(queryWords) == 0 {
+		return fail(env, jsonOn, 2, "usage", "search query has no words")
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+	issues, listErr := s.ListIssues()
+	if listErr != nil {
+		return fail(env, jsonOn, 1, "error", listErr.Error())
+	}
+
+	type searchResult struct {
+		Issue   model.Issue
+		Matches int
+	}
+	var results []searchResult
+
+	for _, iss := range issues {
+		var searchable strings.Builder
+		searchable.WriteString(iss.Title)
+		searchable.WriteByte(' ')
+		searchable.WriteString(iss.Body)
+
+		_, comments, loadErr := s.LoadIssue(iss.ID)
+		if loadErr != nil {
+			return fail(env, jsonOn, 1, "error", loadErr.Error())
+		}
+		for _, c := range comments {
+			if c.RetractedBy != "" {
+				continue
+			}
+			searchable.WriteByte(' ')
+			searchable.WriteString(c.Body)
+			if c.Source != "" {
+				searchable.WriteByte(' ')
+				searchable.WriteString(c.Source)
+			}
+		}
+
+		textWords := words.Split(searchable.String())
+		textSet := make(map[string]bool, len(textWords))
+		for _, w := range textWords {
+			textSet[w] = true
+		}
+
+		matches := 0
+		for _, qw := range queryWords {
+			if textSet[qw] {
+				matches++
+			}
+		}
+		if matches > 0 {
+			results = append(results, searchResult{Issue: iss, Matches: matches})
+		}
+	}
+
+	sort.SliceStable(results, func(a, b int) bool {
+		return results[a].Matches > results[b].Matches
+	})
+
+	if jsonOn {
+		items := make([]map[string]any, len(results))
+		for i, r := range results {
+			m := issueToJSONMap(r.Issue, false)
+			m["matches"] = r.Matches
+			items[i] = m
+		}
+		return successJSON(env, items)
+	}
+	for _, r := range results {
+		fmt.Fprintf(env.Stdout, "%s\t%d\t%s\n", r.Issue.ID, r.Matches, r.Issue.Title)
+	}
 	return 0
 }
 

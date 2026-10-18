@@ -94,7 +94,21 @@ Read-only context:
 change them. Recording who edited an issue is a potential follow-up (issues #4 and #5), not part of v0.1.0.
 
 ## Step 5: lists and search
-`tags` (with counts), `milestones`, and `search` by words.
+`tags` (with counts), `milestones`, and `search` by words. Search splits words with `internal/words`, as the
+retracted-comment warning does. The contract is the package comment in `internal/cli/cli.go`.
+
+Drafter edits:
+- internal/cli/cli.go
+- internal/store/store.go
+
+Read-only context:
+- docs/spec.md
+- internal/model/model.go
+- internal/words/words.go
+- internal/cli/cli_test.go
+- internal/cli/comment_test.go
+- internal/cli/lists_test.go
+- internal/store/store_test.go
 
 ## Version 0.1.0
 A working tracker on one checkout: steps 1 to 5 (with 4b), then the release step below. Everything under "Later" comes after.

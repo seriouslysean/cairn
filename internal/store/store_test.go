@@ -362,3 +362,55 @@ func TestRemoveCommentSaysWhatIsMissing(t *testing.T) {
 		}
 	}
 }
+
+func TestListMilestones(t *testing.T) {
+	s := newStore(t)
+	if got, err := s.ListMilestones(); err != nil || len(got) != 0 {
+		t.Fatalf("no milestones: %v, %v", got, err)
+	}
+	dir := filepath.Join(s.Dir, "milestones")
+	write := func(name, data string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("v0.4.md", "---\nid: v0.4\ntitle: First release\nstatus: open\ndue: 2026-12-01\n---\nWhat ships.\n")
+	write("beta.md", "---\nid: beta\ntitle: Beta\nstatus: done\n---\n")
+	write("notes.txt", "not a milestone")
+	write(".cairn-tmp-123", "half a file")
+	write(".hidden.md", "not frontmatter")
+	if err := os.Mkdir(filepath.Join(dir, "folder.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ListMilestones()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []model.Milestone{
+		{ID: "beta", Title: "Beta", Status: "done", Body: ""},
+		{ID: "v0.4", Title: "First release", Status: "open", Due: "2026-12-01", Body: "What ships.\n"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got  %+v\nwant %+v", got, want)
+	}
+
+	write("broken.md", "not frontmatter")
+	if _, err := s.ListMilestones(); err == nil {
+		t.Fatal("broken milestone file: want an error")
+	}
+	if err := os.Remove(filepath.Join(dir, "broken.md")); err != nil {
+		t.Fatal(err)
+	}
+	write("v0.5.md", "---\nid: v0.6\ntitle: Next\nstatus: open\n---\n")
+	if _, err := s.ListMilestones(); err == nil {
+		t.Fatal("id that does not match its file name: want an error")
+	}
+
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.ListMilestones(); err != nil || len(got) != 0 {
+		t.Fatalf("missing folder: %v, %v", got, err)
+	}
+}
