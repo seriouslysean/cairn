@@ -75,18 +75,16 @@ type Config struct {
 	GitHubRepo    string
 	EmbeddingsURL string
 	DupeText      float64
-	DupeMeaning   float64
 	Extra         []doc.Field
 }
 
 // DefaultConfig is the config used for absent keys: statuses [backlog, open, in-progress, done], tag groups
-// [severity, effort, area], dupe_text 0.6 and dupe_meaning 0.85, with GitHub sync and embeddings off.
+// [severity, effort, area] and dupe_text 0.6, with GitHub sync and embeddings off.
 func DefaultConfig() Config {
 	return Config{
-		Statuses:    []string{"backlog", "open", "in-progress", "done"},
-		TagGroups:   []string{"severity", "effort", "area"},
-		DupeText:    0.6,
-		DupeMeaning: 0.85,
+		Statuses:  []string{"backlog", "open", "in-progress", "done"},
+		TagGroups: []string{"severity", "effort", "area"},
+		DupeText:  0.6,
 	}
 }
 
@@ -383,7 +381,7 @@ func (m Milestone) Fields() []doc.Field {
 // configKnownKeys are the frontmatter keys ParseConfig handles.
 var configKnownKeys = map[string]bool{
 	"statuses": true, "tag_groups": true, "github_repo": true,
-	"embeddings_url": true, "dupe_text": true, "dupe_meaning": true,
+	"embeddings_url": true, "dupe_text": true,
 }
 
 // ParseConfig builds a Config from config.yml's frontmatter, taking DefaultConfig's value for each absent key. It
@@ -414,12 +412,6 @@ func ParseConfig(fields []doc.Field) (Config, error) {
 				return Config{}, fmt.Errorf("model: bad dupe_text %q: %w", f.Value, err)
 			}
 			c.DupeText = v
-		case "dupe_meaning":
-			v, err := strconv.ParseFloat(f.Value, 64)
-			if err != nil {
-				return Config{}, fmt.Errorf("model: bad dupe_meaning %q: %w", f.Value, err)
-			}
-			c.DupeMeaning = v
 		}
 	}
 	c.Extra = extra
@@ -427,7 +419,7 @@ func ParseConfig(fields []doc.Field) (Config, error) {
 }
 
 // Fields returns the config's frontmatter in the order statuses, tag_groups, github_repo, embeddings_url, dupe_text,
-// dupe_meaning, then Extra. github_repo and embeddings_url are left out when empty. Numbers are written with
+// then Extra. github_repo and embeddings_url are left out when empty. Numbers are written with
 // strconv.FormatFloat(f, 'g', -1, 64).
 func (c Config) Fields() []doc.Field {
 	fields := []doc.Field{
@@ -440,10 +432,7 @@ func (c Config) Fields() []doc.Field {
 	if c.EmbeddingsURL != "" {
 		fields = append(fields, doc.Field{Key: "embeddings_url", Value: c.EmbeddingsURL})
 	}
-	fields = append(fields,
-		doc.Field{Key: "dupe_text", Value: strconv.FormatFloat(c.DupeText, 'g', -1, 64)},
-		doc.Field{Key: "dupe_meaning", Value: strconv.FormatFloat(c.DupeMeaning, 'g', -1, 64)},
-	)
+	fields = append(fields, doc.Field{Key: "dupe_text", Value: strconv.FormatFloat(c.DupeText, 'g', -1, 64)})
 	fields = append(fields, c.Extra...)
 	return fields
 }

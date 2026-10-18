@@ -256,26 +256,43 @@ func TestConfigDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Config{Statuses: []string{"backlog", "open", "in-progress", "done"},
-		TagGroups: []string{"severity", "effort", "area"}, DupeText: 0.6, DupeMeaning: 0.85}
+		TagGroups: []string{"severity", "effort", "area"}, DupeText: 0.6}
 	if !reflect.DeepEqual(c, want) || !reflect.DeepEqual(DefaultConfig(), want) {
 		t.Fatalf("got %+v", c)
 	}
 	wantFile := "---\nstatuses: [backlog, open, in-progress, done]\ntag_groups: [severity, effort, area]\n" +
-		"dupe_text: 0.6\ndupe_meaning: 0.85\n---\n"
+		"dupe_text: 0.6\n---\n"
 	if out := join(t, c.Fields(), ""); out != wantFile {
 		t.Fatalf("got\n%s", out)
 	}
 }
 
+// dupe_meaning went with the dupes command (issue #16). A config that still has it keeps the line as an unknown key.
+func TestConfigDupeMeaningIsUnknown(t *testing.T) {
+	f, _ := split(t, "---\ndupe_meaning: 0.85\n---\n")
+	c, err := ParseConfig(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Extra) != 1 || c.Extra[0].Key != "dupe_meaning" || c.Extra[0].Value != "0.85" {
+		t.Fatalf("extra: %+v", c.Extra)
+	}
+	want := "---\nstatuses: [backlog, open, in-progress, done]\ntag_groups: [severity, effort, area]\n" +
+		"dupe_text: 0.6\ndupe_meaning: 0.85\n---\n"
+	if out := join(t, c.Fields(), ""); out != want {
+		t.Fatalf("got\n%s", out)
+	}
+}
+
 func TestConfigOverrides(t *testing.T) {
-	src := "---\nstatuses: [todo, done]\ngithub_repo: owner/name\ndupe_meaning: 0.9\n---\n"
+	src := "---\nstatuses: [todo, done]\ngithub_repo: owner/name\ndupe_text: 0.7\n---\n"
 	f, _ := split(t, src)
 	c, err := ParseConfig(f)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(c.Statuses, []string{"todo", "done"}) || c.GitHubRepo != "owner/name" ||
-		c.DupeMeaning != 0.9 || c.DupeText != 0.6 || len(c.TagGroups) != 3 || c.EmbeddingsURL != "" {
+		c.DupeText != 0.7 || len(c.TagGroups) != 3 || c.EmbeddingsURL != "" {
 		t.Fatalf("got %+v", c)
 	}
 	for _, bad := range []string{"---\ndupe_text: high\n---\n", "---\nstatuses: open\n---\n"} {

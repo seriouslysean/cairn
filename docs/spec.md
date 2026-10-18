@@ -74,7 +74,6 @@ tag_groups: [severity, effort, area]
 github_repo: owner/name
 embeddings_url: http://127.0.0.1:8080/v1/embeddings
 dupe_text: 0.6
-dupe_meaning: 0.85
 ---
 ```
 Every key is optional. Shown above with the defaults, except that `github_repo` and `embeddings_url` are off when absent.
@@ -91,14 +90,14 @@ Every key is optional. Shown above with the defaults, except that `github_repo` 
 |---|---|
 | Start | `cairn init` |
 | Lists | `cairn tags`, `cairn milestones`, `cairn ls [--status s] [--tag t] [--milestone m] [--due-before d] [--branches]` |
-| Add | `cairn new "title" [--body text] [--tag t]... [--milestone m] [--due d] [--force]` |
+| Add | `cairn new "title" [--body text] [--tag t]... [--milestone m] [--due d]` |
 | Edit | `cairn edit <id> [--title t] [--body text] [--status s] [--tag +t] [--tag -t] [--milestone m] [--due d]` |
 | Delete | `cairn rm <id>` |
 | Read | `cairn show <id> [--all] [--branches]` |
 | Comment | `cairn comment <id> --kind evidence\|decision\|result [--source s] "text"` |
 | Retract | `cairn retract <id> <comment> --reason "…" [--disproved-by <comment>]` |
 | Purge | `cairn purge <id> <comment>` |
-| Search | `cairn search "words"`, `cairn search --meaning "text"`, `cairn dupes [<id>\|"text"]` |
+| Search | `cairn search "words"`, `cairn search --meaning "text"` |
 | Board | `cairn board`, `cairn board --html <file>` |
 | Sync | `cairn pull`, `cairn push [--dry-run]` |
 
@@ -111,8 +110,7 @@ Every key is optional. Shown above with the defaults, except that `github_repo` 
   - 0: ok;
   - 1: error;
   - 2: usage;
-  - 3: possible duplicates found (`new` without `--force`);
-  - 4: not found.
+  - 4: not found (3 is not used).
 
 ## Comments are data, not chat
 - A writer may add three kinds, and `comment` refuses anything else (`pull` also creates kind `github`, below):
@@ -125,7 +123,7 @@ Every key is optional. Shown above with the defaults, except that `github_repo` 
   added, with a warning that names the retracted comment and its reason.
 - `purge` deletes the comment file, for mistakes such as a pasted secret. Git history still holds it.
 
-## Search and duplicates
+## Search
 - `search` scans titles, bodies and active comments for the words given, and ranks by how many match.
 - `--meaning` is optional:
   - It needs `embeddings_url`, an OpenAI-compatible `/v1/embeddings` endpoint.
@@ -133,9 +131,7 @@ Every key is optional. Shown above with the defaults, except that `github_repo` 
   - Search compares the query vector with every cached vector (cosine similarity).
 - The word-overlap score of two texts is the number of distinct words they share divided by the number of distinct
   words in either. A word is a run of letters and digits, compared in lowercase.
-- `dupes` gives each candidate a word-overlap score and, when embeddings are configured, a meaning score. A candidate
-  counts when either score reaches its threshold from the config.
-- `new` runs the same check first. If candidates exist, it exits with code 3 and lists them, unless `--force` is given.
+- Cairn does not look for duplicates. Run `search` before `new`.
 
 ## Branches
 - By default, commands read the current checkout only.

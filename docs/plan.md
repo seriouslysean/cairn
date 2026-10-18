@@ -72,8 +72,8 @@ Read-only context:
 
 ## Step 4: comments
 `comment`, `retract` and `purge`. Retracted comments are hidden by default, `--all` shows them, and a new comment that
-matches a retracted one triggers the warning. The match is the word-overlap score from `internal/words`, which step 6
-reuses for `dupes`. The contract is the package comment in `internal/cli/cli.go`.
+matches a retracted one triggers the warning. The match is the word-overlap score from `internal/words`. The contract is
+the package comment in `internal/cli/cli.go`.
 
 Drafter edits:
 - internal/cli/cli.go
@@ -96,11 +96,8 @@ change them. Recording who edited an issue is a potential follow-up (issues #4 a
 ## Step 5: lists and search
 `tags` (with counts), `milestones`, and `search` by words.
 
-## Step 6: duplicates by words
-`dupes` with the word-overlap score, plus the check that `new` runs (exit code 3, `--force`).
-
 ## Version 0.1.0
-A working tracker on one checkout: steps 1 to 6 (with 4b), then the release step below. Everything under "Later" comes after.
+A working tracker on one checkout: steps 1 to 5 (with 4b), then the release step below. Everything under "Later" comes after.
 
 Release step:
 - CI runs `scripts/check.sh` on every pull request, and `go vet` and `go test` on Go 1.24, the oldest version `go.mod`
@@ -111,8 +108,11 @@ Release step:
 
 ## Later, in this order
 1. `--branches`.
-2. Meaning search and meaning-based duplicates (`.index/`).
+2. Meaning search (`.index/`).
 3. `board` and `board --html`.
 4. `pull`.
 5. `push`.
 6. Release: CI, tagged builds, a Homebrew tap.
+
+Not planned: duplicate checks. The spec had `dupes` and a check before `new` (exit code 3, `--force`); word overlap
+could not tell a duplicate from a template title, so both wait in the backlog as #15 and #16.
