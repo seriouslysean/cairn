@@ -25,10 +25,10 @@
 //   - 4: "not_found": no issue, comment or milestone with that id, including an id that is not valid. The message names
 //     the id that was not found.
 //
-// Writes (new, edit, rm, comment, retract, purge, milestone new, milestone edit) need an actor: --as, or else the CAIRN_ACTOR environment variable.
-// They also take --persona and --model. new records them on the issue as by, persona and model, once: no later write
-// changes them, and an issue without them keeps "". comment records them the same way on the comment, and retract
-// records the actor as retracted_by; the other writes check the actor but store it nowhere.
+// Writes (new, edit, rm, comment, retract, purge, milestone new, milestone edit) need an actor: --as, or else the
+// CAIRN_ACTOR environment variable. They also take --persona and --model. new records them on the issue as by, persona
+// and model, once: no later write changes them, and an issue without them keeps "". comment records them the same way
+// on the comment, and retract records the actor as retracted_by; the other writes check the actor but store it nowhere.
 //
 // Commands:
 //   - init: makes .cairn in Env.Dir (it does not look upward). Text: "initialized <the .cairn path>\n". Data:
@@ -1255,37 +1255,18 @@ func runSearch(env Env, args []string) int {
 	return 0
 }
 
-// validMilestoneID reports whether id can name a milestone file: non-empty, no "/", not starting with ".".
-func validMilestoneID(id string) bool {
-	return id != "" && !strings.Contains(id, "/") && !strings.HasPrefix(id, ".")
-}
-
 func runMilestone(env Env, args []string) int {
 	jsonOn := scanJSON(args)
-	// Find the first positional argument (not a flag, not "--") as the subcommand.
-	sub := ""
-	subIdx := -1
-	for i, a := range args {
-		if a == "--" {
-			break
-		}
-		if strings.HasPrefix(a, "--") {
-			continue
-		}
-		sub = a
-		subIdx = i
-		break
-	}
-	if sub == "" {
+	if len(args) == 0 {
 		return fail(env, jsonOn, 2, "usage", "milestone requires a subcommand: new or edit")
 	}
-	switch sub {
+	switch args[0] {
 	case "new":
-		return runMilestoneNew(env, args[subIdx+1:])
+		return runMilestoneNew(env, args[1:])
 	case "edit":
-		return runMilestoneEdit(env, args[subIdx+1:])
+		return runMilestoneEdit(env, args[1:])
 	default:
-		return fail(env, jsonOn, 2, "usage", fmt.Sprintf("unknown milestone subcommand %q", sub))
+		return fail(env, jsonOn, 2, "usage", fmt.Sprintf("unknown milestone subcommand %q", args[0]))
 	}
 }
 
@@ -1301,7 +1282,7 @@ func runMilestoneNew(env Env, args []string) int {
 	id := res.positionals[0]
 	title := res.positionals[1]
 
-	if !validMilestoneID(id) {
+	if !store.ValidMilestoneID(id) {
 		return fail(env, jsonOn, 2, "usage", "milestone id must not be empty, contain \"/\" or start with \".\"")
 	}
 	if strings.TrimSpace(title) == "" {
@@ -1334,16 +1315,11 @@ func runMilestoneNew(env Env, args []string) int {
 		return fail(env, jsonOn, 1, "error", "config.yml lists no statuses")
 	}
 
-	// Check whether a milestone file already exists for this id.
-	_, loadErr := s.LoadMilestone(id)
-	if loadErr != nil {
-		if errors.Is(loadErr, store.ErrNotFound) {
-			// No file yet; proceed to create.
-		} else {
-			return fail(env, jsonOn, 1, "error", loadErr.Error())
-		}
-	} else {
+	switch _, loadErr := s.LoadMilestone(id); {
+	case loadErr == nil:
 		return fail(env, jsonOn, 1, "exists", fmt.Sprintf("milestone %q already exists", id))
+	case !errors.Is(loadErr, store.ErrNotFound):
+		return fail(env, jsonOn, 1, "error", loadErr.Error())
 	}
 
 	m := model.Milestone{
@@ -1385,13 +1361,6 @@ func runMilestoneEdit(env Env, args []string) int {
 		newTitle := res.values["title"][len(res.values["title"])-1]
 		if strings.TrimSpace(newTitle) == "" {
 			return fail(env, jsonOn, 2, "usage", "milestone title must not be blank")
-		}
-	}
-
-	if hasStatus {
-		newStatus := res.values["status"][len(res.values["status"])-1]
-		if newStatus == "" {
-			return fail(env, jsonOn, 2, "usage", "milestone status must not be blank")
 		}
 	}
 
