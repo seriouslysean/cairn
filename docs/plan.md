@@ -94,7 +94,21 @@ Read-only context:
 change them. Recording who edited an issue is a potential follow-up (issues #4 and #5), not part of v0.1.0.
 
 ## Step 5: lists and search
-`tags` (with counts), `milestones`, and `search` by words.
+`tags` (with counts), `milestones`, and `search` by words. Search splits words with `internal/words`, as the
+retracted-comment warning does and `dupes` will. The contract is the package comment in `internal/cli/cli.go`.
+
+Drafter edits:
+- internal/cli/cli.go
+- internal/store/store.go
+
+Read-only context:
+- docs/spec.md
+- internal/model/model.go
+- internal/words/words.go
+- internal/cli/cli_test.go
+- internal/cli/comment_test.go
+- internal/cli/lists_test.go
+- internal/store/store_test.go
 
 ## Step 6: duplicates by words
 `dupes` with the word-overlap score, plus the check that `new` runs (exit code 3, `--force`).

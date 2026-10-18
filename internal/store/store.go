@@ -344,3 +344,10 @@ func (s *Store) RemoveComment(issueID, commentID string) error {
 	}
 	return err
 }
+
+// ListMilestones reads every <id>.md file in milestones/, sorted by ID. Folders, names that do not end in ".md", and
+// names that start with "." (temporary files included) are ignored. A file that does not parse, or whose id does not
+// match its file name, is an error. A missing milestones folder gives an empty list.
+func (s *Store) ListMilestones() ([]model.Milestone, error) {
+	panic("todo: step 5")
+}

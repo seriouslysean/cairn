@@ -5,7 +5,8 @@
 // takes the next argument even when it starts with "-", so "--tag -t" works, but not one that starts with "--": that
 // is a missing value, and "--name=--value" passes such a value. --tag can be repeated; for any other flag the last
 // one wins. No arguments at all is a usage error. "--help" and "-h" mean help, and "--version" means version.
-// --branches, which a later step builds, is a usage error until then, and so is --all anywhere but show.
+// --branches and search --meaning, which later steps build, are usage errors until then, and so is --all anywhere but
+// show.
 //
 // Output: --json anywhere before "--" turns on JSON, even when the other arguments are wrong. With --json, success
 // prints {"ok": true, "data": …} and failure prints
@@ -63,6 +64,19 @@
 //     <comment>\n". Data: the comment.
 //   - purge <id> <comment>: deletes the comment's file, retracted or not. Text: "purged <comment>\n". Data:
 //     {"id": the issue id, "comment": the comment id}.
+//   - tags: every tag on any issue, with the number of issues that have it (an issue counts once), sorted by tag in
+//     byte order. Text: one "<tag>\t<count>\n" line per tag. Data: a list of {"tag", "count"} (an empty list, never
+//     null).
+//   - milestones: every milestone with a file in milestones/ and every milestone an issue names, with the number of
+//     issues that name it. A milestone without a file has "" for title, status and due. Sorted by due, those without
+//     one last, then by id. Text: one "<id>\t<due>\t<issues>\t<title>\n" line each. Data: a list of {"id", "title",
+//     "status", "due", "issues"} (an empty list, never null).
+//   - search <words>...: the positional arguments joined by spaces are the query, and its words are words.Split of
+//     it; a query with no words is a usage error. An issue's matches are the query words found among the words of
+//     its title, its body, and the bodies and sources of its active comments; tags are not searched. Issues with at
+//     least one match are listed by matches, most first, then in store order. Text: one
+//     "<id>\t<matches>\t<title>\n" line each. Data: a list of issues without "body", each with "matches" added (an
+//     empty list, never null, when nothing matches).
 //   - version, help. help lists every command.
 //
 // A tag is non-empty with no space, ",", "[" or "]". When it has a ":", the part before the first ":" must be one of
@@ -142,6 +156,12 @@ func Run(args []string, env Env) int {
 		return runRetract(env, args[1:])
 	case "purge":
 		return runPurge(env, args[1:])
+	case "tags":
+		return runTags(env, args[1:])
+	case "milestones":
+		return runMilestones(env, args[1:])
+	case "search":
+		return runSearch(env, args[1:])
 	default:
 		jsonOn := scanJSON(args[1:])
 		return fail(env, jsonOn, 2, "usage", fmt.Sprintf("unknown command %q", cmd))
@@ -980,6 +1000,18 @@ func runPurge(env Env, args []string) int {
 	}
 	fmt.Fprintf(env.Stdout, "purged %s\n", commentID)
 	return 0
+}
+
+func runTags(env Env, args []string) int {
+	panic("todo: step 5")
+}
+
+func runMilestones(env Env, args []string) int {
+	panic("todo: step 5")
+}
+
+func runSearch(env Env, args []string) int {
+	panic("todo: step 5")
 }
 
 func validateTag(t string, cfg model.Config) string {
