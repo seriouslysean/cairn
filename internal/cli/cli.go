@@ -97,6 +97,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -332,9 +333,9 @@ func runHelp(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "help takes no arguments")
 	}
 	if jsonOn {
-		return successJSON(env, "cairn init | new | edit | rm | show | ls | comment | retract | purge | version | help")
+		return successJSON(env, "cairn init | new | edit | rm | show | ls | comment | retract | purge | tags | milestones | search | version | help")
 	}
-	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n\nCommands:\n  init   new   edit   rm   show   ls   comment   retract   purge   version   help\n")
+	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n\nCommands:\n  init   new   edit   rm   show   ls   comment   retract   purge   tags   milestones   search   version   help\n")
 	return 0
 }
 
@@ -1003,15 +1004,223 @@ func runPurge(env Env, args []string) int {
 }
 
 func runTags(env Env, args []string) int {
-	panic("todo: step 5")
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) > 0 {
+		return fail(env, jsonOn, 2, "usage", "tags takes no positional arguments")
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+	issues, listErr := s.ListIssues()
+	if listErr != nil {
+		return fail(env, jsonOn, 1, "error", listErr.Error())
+	}
+
+	counts := map[string]int{}
+	for _, iss := range issues {
+		seen := map[string]bool{}
+		for _, t := range iss.Tags {
+			if !seen[t] {
+				seen[t] = true
+				counts[t]++
+			}
+		}
+	}
+
+	type tagEntry struct {
+		Tag   string `json:"tag"`
+		Count int    `json:"count"`
+	}
+	entries := make([]tagEntry, 0, len(counts))
+	for t, c := range counts {
+		entries = append(entries, tagEntry{Tag: t, Count: c})
+	}
+	sort.Slice(entries, func(a, b int) bool {
+		return entries[a].Tag < entries[b].Tag
+	})
+
+	if jsonOn {
+		return successJSON(env, entries)
+	}
+	for _, e := range entries {
+		fmt.Fprintf(env.Stdout, "%s\t%d\n", e.Tag, e.Count)
+	}
+	return 0
 }
 
 func runMilestones(env Env, args []string) int {
-	panic("todo: step 5")
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) > 0 {
+		return fail(env, jsonOn, 2, "usage", "milestones takes no positional arguments")
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+	milestones, listErr := s.ListMilestones()
+	if listErr != nil {
+		return fail(env, jsonOn, 1, "error", listErr.Error())
+	}
+	issues, issueErr := s.ListIssues()
+	if issueErr != nil {
+		return fail(env, jsonOn, 1, "error", issueErr.Error())
+	}
+
+	issueCounts := map[string]int{}
+	for _, iss := range issues {
+		if iss.Milestone != "" {
+			issueCounts[iss.Milestone]++
+		}
+	}
+
+	type milestoneEntry struct {
+		ID     string `json:"id"`
+		Title  string `json:"title"`
+		Status string `json:"status"`
+		Due    string `json:"due"`
+		Issues int    `json:"issues"`
+	}
+
+	seen := map[string]bool{}
+	entries := []milestoneEntry{}
+	for _, m := range milestones {
+		seen[m.ID] = true
+		entries = append(entries, milestoneEntry{
+			ID: m.ID, Title: m.Title, Status: m.Status, Due: m.Due,
+			Issues: issueCounts[m.ID],
+		})
+	}
+	for _, iss := range issues {
+		if iss.Milestone != "" && !seen[iss.Milestone] {
+			seen[iss.Milestone] = true
+			entries = append(entries, milestoneEntry{
+				ID: iss.Milestone, Title: "", Status: "", Due: "",
+				Issues: issueCounts[iss.Milestone],
+			})
+		}
+	}
+
+	sort.Slice(entries, func(a, b int) bool {
+		da, db := entries[a].Due, entries[b].Due
+		if da != db {
+			if da == "" {
+				return false
+			}
+			if db == "" {
+				return true
+			}
+			return da < db
+		}
+		return entries[a].ID < entries[b].ID
+	})
+
+	if jsonOn {
+		return successJSON(env, entries)
+	}
+	for _, e := range entries {
+		fmt.Fprintf(env.Stdout, "%s\t%s\t%d\t%s\n", e.ID, e.Due, e.Issues, e.Title)
+	}
+	return 0
 }
 
 func runSearch(env Env, args []string) int {
-	panic("todo: step 5")
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) == 0 {
+		return fail(env, jsonOn, 2, "usage", "search requires at least one word")
+	}
+
+	query := strings.Join(res.positionals, " ")
+	queryWords := words.Split(query)
+	if len(queryWords) == 0 {
+		return fail(env, jsonOn, 2, "usage", "search query has no words")
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+	issues, listErr := s.ListIssues()
+	if listErr != nil {
+		return fail(env, jsonOn, 1, "error", listErr.Error())
+	}
+
+	type searchResult struct {
+		Issue   model.Issue
+		Matches int
+	}
+	var results []searchResult
+
+	for _, iss := range issues {
+		var searchable strings.Builder
+		searchable.WriteString(iss.Title)
+		searchable.WriteByte(' ')
+		searchable.WriteString(iss.Body)
+
+		_, comments, loadErr := s.LoadIssue(iss.ID)
+		if loadErr != nil {
+			return fail(env, jsonOn, 1, "error", loadErr.Error())
+		}
+		for _, c := range comments {
+			if c.RetractedBy != "" {
+				continue
+			}
+			searchable.WriteByte(' ')
+			searchable.WriteString(c.Body)
+			if c.Source != "" {
+				searchable.WriteByte(' ')
+				searchable.WriteString(c.Source)
+			}
+		}
+
+		textWords := words.Split(searchable.String())
+		textSet := make(map[string]bool, len(textWords))
+		for _, w := range textWords {
+			textSet[w] = true
+		}
+
+		matches := 0
+		for _, qw := range queryWords {
+			if textSet[qw] {
+				matches++
+			}
+		}
+		if matches > 0 {
+			results = append(results, searchResult{Issue: iss, Matches: matches})
+		}
+	}
+
+	sort.SliceStable(results, func(a, b int) bool {
+		return results[a].Matches > results[b].Matches
+	})
+
+	if jsonOn {
+		items := make([]map[string]any, len(results))
+		for i, r := range results {
+			m := issueToJSONMap(r.Issue, false)
+			m["matches"] = r.Matches
+			items[i] = m
+		}
+		return successJSON(env, items)
+	}
+	for _, r := range results {
+		fmt.Fprintf(env.Stdout, "%s\t%d\t%s\n", r.Issue.ID, r.Matches, r.Issue.Title)
+	}
+	return 0
 }
 
 func validateTag(t string, cfg model.Config) string {

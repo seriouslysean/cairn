@@ -349,5 +349,49 @@ func (s *Store) RemoveComment(issueID, commentID string) error {
 // names that start with "." (temporary files included) are ignored. A file that does not parse, or whose id does not
 // match its file name, is an error. A missing milestones folder gives an empty list.
 func (s *Store) ListMilestones() ([]model.Milestone, error) {
-	panic("todo: step 5")
+	dir := filepath.Join(s.Dir, "milestones")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var milestones []model.Milestone
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		idStr := strings.TrimSuffix(name, ".md")
+		if idStr == "" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return nil, err
+		}
+		fields, body, err := doc.Parse(data)
+		if err != nil {
+			return nil, fmt.Errorf("store: %s: %w", name, err)
+		}
+		m, err := model.ParseMilestone(fields, body)
+		if err != nil {
+			return nil, fmt.Errorf("store: %s: %w", name, err)
+		}
+		if m.ID != idStr {
+			return nil, fmt.Errorf("store: milestone id %q does not match file name %q", m.ID, name)
+		}
+		milestones = append(milestones, m)
+	}
+	sort.Slice(milestones, func(a, b int) bool {
+		return milestones[a].ID < milestones[b].ID
+	})
+	return milestones, nil
 }
