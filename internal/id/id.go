@@ -63,5 +63,13 @@ func Length(count int) int {
 
 // ValidComment reports whether s is a comment id: "c-" followed by 4 characters from Alphabet.
 func ValidComment(s string) bool {
-	panic("todo: step 2")
+	if len(s) != 6 || s[:2] != "c-" {
+		return false
+	}
+	for i := 2; i < 6; i++ {
+		if !strings.ContainsRune(Alphabet, rune(s[i])) {
+			return false
+		}
+	}
+	return true
 }
