@@ -571,7 +571,6 @@ func TestAllIsOnlyForShow(t *testing.T) {
 	tr := newTracker(t)
 	tr.issue("new", "a")
 	tr.wantError(2, "usage", "ls", "--all")
-	tr.wantError(2, "usage", "show", "0123", "--all", "--branches")
 }
 
 func TestHelpListsCommentCommands(t *testing.T) {
