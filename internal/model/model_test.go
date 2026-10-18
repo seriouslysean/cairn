@@ -2,6 +2,7 @@ package model
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,8 +17,8 @@ status: in-progress
 tags: [severity:high, effort:2, area:export]
 milestone: v0.4
 due: 2026-11-01
-created: 2026-10-17T19:00:00Z
-updated: 2026-10-17T19:20:00Z
+created: 2026-10-17T19:00:00.000Z
+updated: 2026-10-17T19:20:00.000Z
 github: 123
 ---
 What is wrong, why it matters, and what "done" means.
@@ -29,10 +30,10 @@ kind: evidence
 by: alice
 persona: skeptic
 model: example-model-1
-at: 2026-10-17T19:20:00Z
+at: 2026-10-17T19:20:00.000Z
 source: export_test.go:42
 retracted_by: bob
-retracted_at: 2026-10-17T20:00:00.5Z
+retracted_at: 2026-10-17T20:00:00.500Z
 retracted_reason: the test was wrong
 disproved_by: c-ab12
 ---
@@ -80,7 +81,7 @@ func TestParseIssueSpecExample(t *testing.T) {
 	}
 	want := Issue{ID: "7f3k", Title: "Export drops the last row", Status: "in-progress",
 		Tags: []string{"severity:high", "effort:2", "area:export"}, Milestone: "v0.4", Due: "2026-11-01",
-		Created: at("2026-10-17T19:00:00Z"), Updated: at("2026-10-17T19:20:00Z"), GitHub: 123,
+		Created: at("2026-10-17T19:00:00.000Z"), Updated: at("2026-10-17T19:20:00.000Z"), GitHub: 123,
 		Body: "What is wrong, why it matters, and what \"done\" means.\n"}
 	if !reflect.DeepEqual(i, want) {
 		t.Fatalf("got  %+v\nwant %+v", i, want)
@@ -93,8 +94,8 @@ func TestIssueRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := join(t, i.Fields(), i.Body)
-	if !strings.Contains(out, "created: 2026-10-17T19:00:00Z\n") {
-		t.Errorf("whole seconds should print without a fraction:\n%s", out)
+	if !strings.Contains(out, "created: 2026-10-17T19:00:00.000Z\n") {
+		t.Errorf("whole seconds should print with a fraction of .000:\n%s", out)
 	}
 	j, err := ParseIssue(split(t, out))
 	if err != nil {
@@ -109,8 +110,8 @@ func TestIssueRoundTrip(t *testing.T) {
 }
 
 func TestIssueFieldsOrderAndOmitted(t *testing.T) {
-	i := Issue{ID: "7f3k", Title: "t", Status: "open", Created: at("2026-10-17T19:00:00Z"),
-		Updated: at("2026-10-17T19:00:00Z")}
+	i := Issue{ID: "7f3k", Title: "t", Status: "open", Created: at("2026-10-17T19:00:00.000Z"),
+		Updated: at("2026-10-17T19:00:00.000Z")}
 	if got := keys(i.Fields()); got != "id title status created updated" {
 		t.Errorf("minimal: %q", got)
 	}
@@ -137,7 +138,7 @@ func TestIssueKeepsUnknownKeys(t *testing.T) {
 }
 
 func TestIssueTimes(t *testing.T) {
-	src := strings.Replace(specIssue, "created: 2026-10-17T19:00:00Z", "created: 2026-10-17T15:00:00.25-04:00", 1)
+	src := strings.Replace(specIssue, "created: 2026-10-17T19:00:00.000Z", "created: 2026-10-17T15:00:00.25-04:00", 1)
 	i, err := ParseIssue(split(t, src))
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +146,7 @@ func TestIssueTimes(t *testing.T) {
 	if !i.Created.Equal(at("2026-10-17T19:00:00.25Z")) || i.Created.Location() != time.UTC {
 		t.Fatalf("created %v", i.Created)
 	}
-	if out := join(t, i.Fields(), i.Body); !strings.Contains(out, "created: 2026-10-17T19:00:00.25Z\n") {
+	if out := join(t, i.Fields(), i.Body); !strings.Contains(out, "created: 2026-10-17T19:00:00.250Z\n") {
 		t.Fatalf("want UTC with the fraction kept:\n%s", out)
 	}
 }
@@ -163,15 +164,15 @@ func TestParseIssueErrors(t *testing.T) {
 		{"id: 7f3k\n", ""},
 		{"title: \"Export drops the last row\"\n", ""},
 		{"status: in-progress\n", ""},
-		{"created: 2026-10-17T19:00:00Z\n", ""},
-		{"updated: 2026-10-17T19:20:00Z\n", ""},
+		{"created: 2026-10-17T19:00:00.000Z\n", ""},
+		{"updated: 2026-10-17T19:20:00.000Z\n", ""},
 		{"id: 7f3k", "id: 7F3K"},
 		{"id: 7f3k", "id: 7f3"},
 		{"title: \"Export drops the last row\"", "title: [a, b]"},
 		{"tags: [severity:high, effort:2, area:export]", "tags: severity:high"},
 		{"due: 2026-11-01", "due: 2026-13-01"},
 		{"due: 2026-11-01", "due: 2026-11-01T00:00:00Z"},
-		{"created: 2026-10-17T19:00:00Z", "created: 2026-10-17"},
+		{"created: 2026-10-17T19:00:00.000Z", "created: 2026-10-17"},
 		{"github: 123", "github: abc"},
 	} {
 		src := strings.Replace(specIssue, c.old, c.new, 1)
@@ -190,8 +191,8 @@ func TestCommentRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Comment{ID: "c-x9k2", Kind: "evidence", By: "alice", Persona: "skeptic", Model: "example-model-1",
-		At: at("2026-10-17T19:20:00Z"), Source: "export_test.go:42", RetractedBy: "bob",
-		RetractedAt: at("2026-10-17T20:00:00.5Z"), RetractedReason: "the test was wrong", DisprovedBy: "c-ab12",
+		At: at("2026-10-17T19:20:00.000Z"), Source: "export_test.go:42", RetractedBy: "bob",
+		RetractedAt: at("2026-10-17T20:00:00.500Z"), RetractedReason: "the test was wrong", DisprovedBy: "c-ab12",
 		Body: "The last row is dropped when the file has no trailing newline.\n"}
 	if !reflect.DeepEqual(c, want) {
 		t.Fatalf("got  %+v\nwant %+v", c, want)
@@ -199,7 +200,7 @@ func TestCommentRoundTrip(t *testing.T) {
 	if out := join(t, c.Fields(), c.Body); out != specComment {
 		t.Fatalf("got\n%s\nwant\n%s", out, specComment)
 	}
-	bare := Comment{ID: "c-x9k2", Kind: "result", By: "bob", At: at("2026-10-17T19:20:00Z")}
+	bare := Comment{ID: "c-x9k2", Kind: "result", By: "bob", At: at("2026-10-17T19:20:00.000Z")}
 	if got := keys(bare.Fields()); got != "id kind by at" {
 		t.Errorf("minimal: %q", got)
 	}
@@ -210,10 +211,10 @@ func TestParseCommentErrors(t *testing.T) {
 		{"id: c-x9k2\n", ""},
 		{"kind: evidence\n", ""},
 		{"by: alice\n", ""},
-		{"at: 2026-10-17T19:20:00Z\n", ""},
+		{"at: 2026-10-17T19:20:00.000Z\n", ""},
 		{"id: c-x9k2", "id: x9k2"},
-		{"at: 2026-10-17T19:20:00Z", "at: yesterday"},
-		{"retracted_at: 2026-10-17T20:00:00.5Z", "retracted_at: soon"},
+		{"at: 2026-10-17T19:20:00.000Z", "at: yesterday"},
+		{"retracted_at: 2026-10-17T20:00:00.500Z", "retracted_at: soon"},
 		{"disproved_by: c-ab12", "disproved_by: ab12"},
 	} {
 		src := strings.Replace(specComment, c.old, c.new, 1)
@@ -330,7 +331,7 @@ func TestParseRejectsWrongShape(t *testing.T) {
 
 func TestIssueCreator(t *testing.T) {
 	i := Issue{ID: "7f3k", Title: "t", Status: "open", Due: "2026-11-01", By: "alice", Persona: "skeptic",
-		Model: "example-model-1", Created: at("2026-10-17T19:00:00Z"), Updated: at("2026-10-17T19:00:00Z"), GitHub: 7}
+		Model: "example-model-1", Created: at("2026-10-17T19:00:00.000Z"), Updated: at("2026-10-17T19:00:00.000Z"), GitHub: 7}
 	if got := keys(i.Fields()); got != "id title status due by persona model created updated github" {
 		t.Errorf("order: %q", got)
 	}
@@ -350,5 +351,29 @@ func TestIssueCreator(t *testing.T) {
 		if _, err := ParseIssue(split(t, src)); err == nil {
 			t.Errorf("%s as a list: want an error", key)
 		}
+	}
+}
+
+// Times are written with three fraction digits, so they compare the same as text as they do as times. v0.1.0 wrote
+// them without trailing zeros, and those files still load.
+func TestTimesSortAsText(t *testing.T) {
+	var written []string
+	for _, old := range []string{"2026-10-18T20:23:44.71Z", "2026-10-18T20:23:44Z", "2026-10-18T20:23:44.7Z",
+		"2026-10-18T20:23:44.693Z"} {
+		c, err := ParseComment(split(t, strings.Replace(specComment, "at: 2026-10-17T19:20:00.000Z", "at: "+old, 1)))
+		if err != nil {
+			t.Fatalf("%s: %v", old, err)
+		}
+		for _, f := range c.Fields() {
+			if f.Key == "at" {
+				written = append(written, f.Value)
+			}
+		}
+	}
+	slices.Sort(written)
+	want := []string{"2026-10-18T20:23:44.000Z", "2026-10-18T20:23:44.693Z", "2026-10-18T20:23:44.700Z",
+		"2026-10-18T20:23:44.710Z"}
+	if !reflect.DeepEqual(written, want) {
+		t.Fatalf("got  %q\nwant %q", written, want)
 	}
 }
