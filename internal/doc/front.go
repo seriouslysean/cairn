@@ -68,14 +68,19 @@ func Parse(b []byte) ([]Field, []byte, error) {
 func Format(fields []Field, body []byte) ([]byte, error) {
 	var out bytes.Buffer
 	out.WriteString("---\n")
+	seen := map[string]bool{}
 	for _, f := range fields {
 		if !validKey(f.Key) {
 			return nil, fmt.Errorf("doc: bad key %q", f.Key)
 		}
+		if seen[f.Key] {
+			return nil, fmt.Errorf("doc: duplicate key %q", f.Key)
+		}
+		seen[f.Key] = true
 		out.WriteString(f.Key + ": ")
 		if f.IsList {
 			for _, it := range f.List {
-				if it == "" || strings.ContainsAny(it, ",[]\n") {
+				if it == "" || strings.TrimSpace(it) != it || strings.ContainsAny(it, ",[]\n") {
 					return nil, fmt.Errorf("doc: bad list item %q in %q", it, f.Key)
 				}
 			}
