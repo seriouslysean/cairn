@@ -142,7 +142,7 @@ func parseLine(s string) (Field, error) {
 		f.IsList = true
 		f.List = []string{}
 		if inner := strings.TrimSpace(val[1 : len(val)-1]); inner != "" {
-			for _, it := range strings.Split(inner, ",") {
+			for it := range strings.SplitSeq(inner, ",") {
 				it = strings.TrimSpace(it)
 				if it == "" {
 					return Field{}, fmt.Errorf("doc: empty list item in %q", key)

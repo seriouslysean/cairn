@@ -22,7 +22,7 @@ func New(n int, taken map[string]bool, r io.Reader) (string, error) {
 		r = rand.Reader
 	}
 	buf := make([]byte, n)
-	for try := 0; try < 100; try++ {
+	for range 100 {
 		if _, err := io.ReadFull(r, buf); err != nil {
 			return "", err
 		}

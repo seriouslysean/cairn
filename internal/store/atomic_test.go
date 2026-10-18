@@ -53,7 +53,7 @@ func TestWriteFileAtomicConcurrentWritersNeverTear(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "a.md")
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
