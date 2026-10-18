@@ -104,3 +104,19 @@ func TestFormatRejectsBadKey(t *testing.T) {
 		t.Fatal("want an error")
 	}
 }
+
+// Parse trims list items, so an item with outer space would not survive the round trip.
+func TestFormatRejectsSpacedListItems(t *testing.T) {
+	for _, item := range []string{" a", "a ", " ", "\ta"} {
+		if _, err := Format([]Field{{Key: "t", List: []string{item}, IsList: true}}, nil); err == nil {
+			t.Errorf("%q: want an error", item)
+		}
+	}
+}
+
+// Parse rejects a duplicate key, so Format must not write one.
+func TestFormatRejectsDuplicateKey(t *testing.T) {
+	if _, err := Format([]Field{{Key: "a", Value: "1"}, {Key: "a", Value: "2"}}, nil); err == nil {
+		t.Fatal("want an error")
+	}
+}

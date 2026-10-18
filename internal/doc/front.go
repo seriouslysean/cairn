@@ -62,7 +62,8 @@ func Parse(b []byte) ([]Field, []byte, error) {
 // Format writes fields and body back as "---\n", one "key: value\n" per field, "---\n", then body.
 // A scalar is written with strconv.Quote when it is empty, has leading or trailing space, starts with `"`, "[" or
 // "#", or contains ": " or a newline; otherwise it is written as is. A list is written as "[a, b]". It returns an
-// error for a malformed key or for a list item that is empty or contains ",", "[", "]" or a newline.
+// error for a malformed or duplicate key, or for a list item that is empty, has leading or trailing space, or
+// contains ",", "[", "]" or a newline.
 // For any file Format wrote, Format(Parse(file)) gives the same bytes.
 func Format(fields []Field, body []byte) ([]byte, error) {
 	var out bytes.Buffer
