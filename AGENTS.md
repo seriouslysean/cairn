@@ -20,3 +20,7 @@ Cairn is an issue tracker for coding agents first and people second. `docs/spec.
   generic names (alice, bob, skeptic, example-model-1).
 - One plan step per PR, on its own branch.
 - Commit messages: `type(scope): summary`, where type is feat, fix, test, docs or chore.
+
+## Issues
+This repo tracks issues with Cairn. Run `cairn help` before using it, and set `CAIRN_ACTOR` to your name. Issues filed on
+GitHub before this stay there until `cairn pull` exists (#6).

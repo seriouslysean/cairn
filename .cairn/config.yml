@@ -1,0 +1,5 @@
+---
+statuses: [backlog, open, in-progress, done]
+tag_groups: [severity, effort, area]
+dupe_text: 0.6
+---
