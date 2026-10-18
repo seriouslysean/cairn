@@ -399,3 +399,99 @@ func TestVersionHelpAndUnknown(t *testing.T) {
 		t.Fatalf("unknown text: exit %d, %q, %q", code, out, errOut)
 	}
 }
+
+// The real binary passes no clock, randomness or environment: the defaults must work.
+func TestNilEnvDefaults(t *testing.T) {
+	dir := t.TempDir()
+	var out, errOut bytes.Buffer
+	env := Env{Version: "1.2.3", Dir: dir, Stdout: &out, Stderr: &errOut}
+	if code := Run([]string{"init"}, env); code != 0 {
+		t.Fatalf("init: exit %d: %s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), ".cairn") {
+		t.Errorf("init text should name the folder: %q", out.String())
+	}
+	out.Reset()
+	before := time.Now().UTC().Add(-time.Second)
+	if code := Run([]string{"new", "a", "--as", "bob", "--json"}, env); code != 0 {
+		t.Fatalf("new: exit %d: %s", code, errOut.String())
+	}
+	var e struct {
+		Data issue `json:"data"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &e); err != nil {
+		t.Fatal(err)
+	}
+	created, err := time.Parse(time.RFC3339, e.Data.Created)
+	if err != nil || created.Before(before) || created.After(time.Now().Add(time.Second)) || len(e.Data.ID) != 4 {
+		t.Fatalf("got %+v (%v)", e.Data, err)
+	}
+	out.Reset()
+	if code := Run([]string{"new", "b"}, env); code != 2 {
+		t.Fatalf("no Getenv means no CAIRN_ACTOR: exit %d", code)
+	}
+}
+
+func TestNoArgsAndAliases(t *testing.T) {
+	tr := &tracker{t: t, dir: t.TempDir(), now: t0, rnd: &seq{}}
+	if code, out, errOut := tr.run(); code != 2 || out != "" || errOut == "" {
+		t.Errorf("no args: exit %d, %q, %q", code, out, errOut)
+	}
+	for _, a := range []string{"--help", "-h"} {
+		if code, out, _ := tr.run(a); code != 0 || !strings.Contains(out, "Usage") {
+			t.Errorf("%s: exit %d, %q", a, code, out)
+		}
+	}
+	if code, out, _ := tr.run("--version"); code != 0 || out != "cairn 1.2.3\n" {
+		t.Errorf("--version: exit %d, %q", code, out)
+	}
+}
+
+// Flags from later steps are usage errors until those steps build them, never silently ignored.
+func TestLaterFlagsRejected(t *testing.T) {
+	tr := newTracker(t)
+	tr.issue("new", "a")
+	tr.wantError(2, "usage", "show", "0123", "--branches")
+	tr.wantError(2, "usage", "show", "0123", "--all")
+	tr.wantError(2, "usage", "ls", "--branches")
+}
+
+// A tag can always be removed, even when its group has left the config.
+func TestRemoveStaleTag(t *testing.T) {
+	tr := newTracker(t)
+	s, err := store.Find(tr.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := model.Issue{ID: "7f3k", Title: "a", Status: "open", Tags: []string{"colour:blue", "area:x"},
+		Created: t0, Updated: t0}
+	if err := s.SaveIssue(stale); err != nil {
+		t.Fatal(err)
+	}
+	if i := tr.issue("edit", "7f3k", "--tag", "-colour:blue"); !reflect.DeepEqual(i.Tags, []string{"area:x"}) {
+		t.Fatalf("got %v", i.Tags)
+	}
+	tr.wantError(2, "usage", "edit", "7f3k", "--tag", "-")
+}
+
+func TestNewDropsDuplicateTags(t *testing.T) {
+	tr := newTracker(t)
+	if i := tr.issue("new", "a", "--tag", "area:x", "--tag", "area:x"); !reflect.DeepEqual(i.Tags, []string{"area:x"}) {
+		t.Fatalf("got %v", i.Tags)
+	}
+}
+
+func TestNotFoundNamesTheID(t *testing.T) {
+	tr := newTracker(t)
+	if code, _, errOut := tr.run("show", "zzzz"); code != 4 || !strings.Contains(errOut, "zzzz") {
+		t.Fatalf("exit %d, stderr %q", code, errOut)
+	}
+}
+
+func TestConfigWithoutStatuses(t *testing.T) {
+	tr := newTracker(t)
+	if err := os.WriteFile(filepath.Join(tr.dir, ".cairn", "config.yml"), []byte("---\nstatuses: []\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr.wantError(1, "error", "new", "a")
+}

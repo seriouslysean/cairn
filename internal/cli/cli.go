@@ -1,9 +1,11 @@
 // Package cli runs cairn's commands. It never prompts and never opens an editor.
 //
-// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json, --force and --all take no
-// value. Flags and positional arguments can come in any order, and "--" ends the flags. A flag that takes a value
-// takes the next argument whatever it looks like (including single-dash values like "-t"), but not an argument that
-// starts with "--". --tag can be repeated; for any other flag the last one wins.
+// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json and --force take no value.
+// Flags and positional arguments can come in any order, and "--" ends the flags. A flag that takes a value
+// takes the next argument even when it starts with "-", so "--tag -t" works, but not one that starts with "--": that
+// is a missing value, and "--name=--value" passes such a value. --tag can be repeated; for any other flag the last
+// one wins. No arguments at all is a usage error. "--help" and "-h" mean help, and "--version" means version.
+// Flags that later steps build (--all, --branches) are usage errors until then.
 //
 // Output: --json anywhere before "--" turns on JSON, even when the other arguments are wrong. With --json, success
 // prints {"ok": true, "data": …} and failure prints
@@ -17,21 +19,23 @@
 //   - 2: "usage": an unknown command or flag, a missing or extra argument, a missing value, or a value in the wrong
 //     form, including a bad date, a status not in the config, a tag whose group is not in the config, and a write
 //     with no actor.
-//   - 4: "not_found": no issue with that id.
+//   - 4: "not_found": no issue with that id. The message names the id.
 //
 // Writes (new, edit, rm) need an actor: --as, or else the CAIRN_ACTOR environment variable. They also take --persona
 // and --model. Step 3 checks the actor but stores it nowhere; comments (step 4) record it.
 //
 // Commands:
-//   - init: makes .cairn in Env.Dir (it does not look upward). Data: {"dir": the .cairn path}.
+//   - init: makes .cairn in Env.Dir (it does not look upward). Text: "initialized <the .cairn path>\n". Data:
+//     {"dir": the .cairn path}.
 //   - new "title" [--body text] [--tag t]... [--milestone m] [--due YYYY-MM-DD] [--force]: adds an issue with the
 //     config's first status, created and updated set to Env.Now in UTC truncated to the millisecond, and a new id.
 //     The title must not be blank. A non-empty body that does not end in "\n" gets one. --force is accepted (step 6
-//     uses it). Text: the id and "\n". Data: the issue.
+//     uses it). Repeated tags are kept once. A config with no statuses is an "error". Text: the id and "\n".
+//     Data: the issue.
 //   - edit <id> [--title t] [--body text] [--status s] [--tag +t] [--tag -t] [--milestone m] [--due d]: changes
 //     only what is given, and at least one change is required. "+t" or "t" adds a tag (no duplicates), "-t" removes
-//     it. An empty --milestone or --due clears it. updated becomes Env.Now as in new. Text: the id and "\n". Data: the
-//     issue.
+//     it; a removed tag only has to be non-empty, so a tag whose group left the config can still go. An empty
+//     --milestone or --due clears it. updated becomes Env.Now as in new. Text: the id and "\n". Data: the issue.
 //   - rm <id>: deletes the issue folder, comments included. Text: "removed <id>\n". Data: {"id": id}.
 //   - show <id>: Text: the issue for a person to read. Data: the issue.
 //   - ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]: lists issues in store order. Every filter
@@ -52,6 +56,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -646,9 +651,6 @@ func runLs(env Env, args []string) int {
 
 	if jsonOn {
 		items := make([]map[string]any, len(filtered))
-		if items == nil {
-			items = []map[string]any{}
-		}
 		for idx, iss := range filtered {
 			items[idx] = issueToJSONMap(iss, false)
 		}
@@ -671,15 +673,9 @@ func validateTag(t string, cfg model.Config) string {
 	if strings.ContainsAny(t, " ,[]") {
 		return fmt.Sprintf("tag %q contains an invalid character", t)
 	}
-	if idx := strings.Index(t, ":"); idx >= 0 {
-		group := t[:idx]
-		found := false
-		for _, g := range cfg.TagGroups {
-			if g == group {
-				found = true
-				break
-			}
-		}
+	if before, _, ok := strings.Cut(t, ":"); ok {
+		group := before
+		found := slices.Contains(cfg.TagGroups, group)
 		if !found {
 			return fmt.Sprintf("tag group %q is not in the config", group)
 		}
@@ -717,13 +713,7 @@ func applyTagEdits(existing []string, edits []string) []string {
 			result = out
 		} else {
 			tag := strings.TrimPrefix(e, "+")
-			found := false
-			for _, t := range result {
-				if t == tag {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(result, tag)
 			if !found {
 				result = append(result, tag)
 			}
@@ -737,13 +727,7 @@ func tagsMatch(issueTags, filters []string) bool {
 		return true
 	}
 	for _, f := range filters {
-		found := false
-		for _, t := range issueTags {
-			if t == f {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(issueTags, f)
 		if !found {
 			return false
 		}
@@ -759,12 +743,7 @@ func validateDate(d string) string {
 }
 
 func statusValid(status string, cfg model.Config) bool {
-	for _, s := range cfg.Statuses {
-		if s == status {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(cfg.Statuses, status)
 }
 
 func requireActor(env Env, res *parseResult) (string, string) {
