@@ -102,7 +102,7 @@ Every key is optional. Shown above with the defaults, except that `github_repo` 
   - 4: not found.
 
 ## Comments are data, not chat
-- There are three kinds, and anything else is refused:
+- A writer may add three kinds, and `comment` refuses anything else (`pull` also creates kind `github`, below):
   - `evidence` requires `--source`: a URL, a file and line, a log path or a command;
   - `decision` holds the owner's words, quoted;
   - `result` is what was done: a PR, a commit or test output.
