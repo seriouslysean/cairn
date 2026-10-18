@@ -17,17 +17,18 @@
 //
 // Exit codes and error codes:
 //   - 0: ok.
-//   - 1: "no_tracker" (no .cairn here or above), "exists" (init where .cairn exists), "error" (anything else).
+//   - 1: "no_tracker" (no .cairn here or above), "exists" (init where .cairn exists, or milestone new for an id
+//     that has a file), "error" (anything else).
 //   - 2: "usage": an unknown command or flag, a missing or extra argument, a missing value, or a value in the wrong
 //     form, including a bad date, a status not in the config, a tag whose group is not in the config, and a write
 //     with no actor.
-//   - 4: "not_found": no issue or comment with that id, including a comment id that is not valid. The message names
+//   - 4: "not_found": no issue, comment or milestone with that id, including an id that is not valid. The message names
 //     the id that was not found.
 //
-// Writes (new, edit, rm, comment, retract, purge) need an actor: --as, or else the CAIRN_ACTOR environment variable.
-// They also take --persona and --model. new records them on the issue as by, persona and model, once: no later write
-// changes them, and an issue without them keeps "". comment records them the same way on the comment, and retract
-// records the actor as retracted_by; the other writes check the actor but store it nowhere.
+// Writes (new, edit, rm, comment, retract, purge, milestone new, milestone edit) need an actor: --as, or else the
+// CAIRN_ACTOR environment variable. They also take --persona and --model. new records them on the issue as by, persona
+// and model, once: no later write changes them, and an issue without them keeps "". comment records them the same way
+// on the comment, and retract records the actor as retracted_by; the other writes check the actor but store it nowhere.
 //
 // Commands:
 //   - init: makes .cairn in Env.Dir (it does not look upward). Text: "initialized <the .cairn path>\n". Data:
@@ -70,6 +71,16 @@
 //     issues that name it. A milestone without a file has "" for title, status and due. Sorted by due, those without
 //     one last, then by id. Text: one "<id>\t<due>\t<issues>\t<title>\n" line each. Data: a list of {"id", "title",
 //     "status", "due", "issues"} (an empty list, never null).
+//   - milestone new <id> "title" [--due YYYY-MM-DD]: writes milestones/<id>.md with the config's first status. The id
+//     must not be empty, contain "/" or start with "." (a usage error). An id that already has a file is "exists",
+//     and a file that does not parse is an "error"; either way the file is left as it was. The title must not be
+//     blank. Text: the id and "\n". Data: the milestone.
+//   - milestone edit <id> [--title t] [--status s] [--due YYYY-MM-DD]: changes only what is given, and at least one
+//     change is required. The title must not be blank, the status must be one of the config's, and an empty --due
+//     clears it. The file's other keys and its body are kept. A milestone without a file is not_found, and a file
+//     that does not parse is an "error". Text: the id and "\n". Data: the milestone.
+//   - milestone with no subcommand, or any other subcommand, is a usage error. The subcommand is the argument right
+//     after milestone.
 //   - search <words>...: the positional arguments joined by spaces are the query, and its words are words.Split of
 //     it; a query with no words is a usage error. An issue's matches are the query words found among the words of
 //     its title, its body, and the bodies and sources of its active comments; tags are not searched. Issues with at
@@ -81,6 +92,8 @@
 //
 // A tag is non-empty with no space, ",", "[" or "]". When it has a ":", the part before the first ":" must be one of
 // the config's tag_groups. A milestone has no "/".
+//
+// A milestone in data is {"id", "title", "status", "due"}, every key always present ("" when due is not set).
 //
 // An issue in data is {"id", "title", "status", "tags", "milestone", "due", "by", "persona", "model", "created",
 // "updated", "github", "body"}, every key always present: tags is a list (never null), times are RFC 3339 UTC strings, github is a number (0 when
@@ -163,6 +176,8 @@ func Run(args []string, env Env) int {
 		return runMilestones(env, args[1:])
 	case "search":
 		return runSearch(env, args[1:])
+	case "milestone":
+		return runMilestone(env, args[1:])
 	default:
 		jsonOn := scanJSON(args[1:])
 		return fail(env, jsonOn, 2, "usage", fmt.Sprintf("unknown command %q", cmd))
@@ -307,6 +322,21 @@ func purgeFlags() map[string]flagSpec {
 	}
 }
 
+func milestoneNewFlags() map[string]flagSpec {
+	return map[string]flagSpec{
+		"json": {false, false}, "as": {true, false}, "persona": {true, false},
+		"model": {true, false}, "due": {true, false},
+	}
+}
+
+func milestoneEditFlags() map[string]flagSpec {
+	return map[string]flagSpec{
+		"json": {false, false}, "as": {true, false}, "persona": {true, false},
+		"model": {true, false}, "title": {true, false}, "status": {true, false},
+		"due": {true, false},
+	}
+}
+
 func runVersion(env Env, args []string) int {
 	jsonOn := scanJSON(args)
 	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
@@ -333,10 +363,10 @@ func runHelp(env Env, args []string) int {
 		return fail(env, jsonOn, 2, "usage", "help takes no arguments")
 	}
 	if jsonOn {
-		return successJSON(env, "cairn init | new | edit | rm | show | ls | comment | retract | purge | tags | milestones | search | version | help")
+		return successJSON(env, "cairn init | new | edit | rm | show | ls | comment | retract | purge | tags | milestones | milestone | search | version | help")
 	}
 	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n\nCommands:\n"+
-		"  init   new   edit   rm   show   ls   comment   retract   purge   tags   milestones   search   version   help\n\n"+
+		"  init   new   edit   rm   show   ls   comment   retract   purge   tags   milestones   milestone   search   version   help\n\n"+
 		"Cairn does not look for duplicates: run cairn search before cairn new.\n")
 	return 0
 }
@@ -1223,6 +1253,182 @@ func runSearch(env Env, args []string) int {
 		fmt.Fprintf(env.Stdout, "%s\t%d\t%s\n", r.Issue.ID, r.Matches, r.Issue.Title)
 	}
 	return 0
+}
+
+func runMilestone(env Env, args []string) int {
+	jsonOn := scanJSON(args)
+	if len(args) == 0 {
+		return fail(env, jsonOn, 2, "usage", "milestone requires a subcommand: new or edit")
+	}
+	switch args[0] {
+	case "new":
+		return runMilestoneNew(env, args[1:])
+	case "edit":
+		return runMilestoneEdit(env, args[1:])
+	default:
+		return fail(env, jsonOn, 2, "usage", fmt.Sprintf("unknown milestone subcommand %q", args[0]))
+	}
+}
+
+func runMilestoneNew(env Env, args []string) int {
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, milestoneNewFlags())
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) != 2 {
+		return fail(env, jsonOn, 2, "usage", "milestone new requires exactly one id and one title")
+	}
+	id := res.positionals[0]
+	title := res.positionals[1]
+
+	if !store.ValidMilestoneID(id) {
+		return fail(env, jsonOn, 2, "usage", "milestone id must not be empty, contain \"/\" or start with \".\"")
+	}
+	if strings.TrimSpace(title) == "" {
+		return fail(env, jsonOn, 2, "usage", "milestone title must not be blank")
+	}
+
+	due := ""
+	if vals, ok := res.values["due"]; ok {
+		due = vals[len(vals)-1]
+		if due != "" {
+			if errStr := validateDate(due); errStr != "" {
+				return fail(env, jsonOn, 2, "usage", errStr)
+			}
+		}
+	}
+
+	if _, actorErr := requireActor(env, res); actorErr != "" {
+		return fail(env, jsonOn, 2, "usage", actorErr)
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+	cfg, cfgErr := s.Config()
+	if cfgErr != nil {
+		return fail(env, jsonOn, 1, "error", cfgErr.Error())
+	}
+	if len(cfg.Statuses) == 0 {
+		return fail(env, jsonOn, 1, "error", "config.yml lists no statuses")
+	}
+
+	switch _, loadErr := s.LoadMilestone(id); {
+	case loadErr == nil:
+		return fail(env, jsonOn, 1, "exists", fmt.Sprintf("milestone %q already exists", id))
+	case !errors.Is(loadErr, store.ErrNotFound):
+		return fail(env, jsonOn, 1, "error", loadErr.Error())
+	}
+
+	m := model.Milestone{
+		ID:     id,
+		Title:  title,
+		Status: cfg.Statuses[0],
+		Due:    due,
+	}
+	if saveErr := s.SaveMilestone(m); saveErr != nil {
+		return fail(env, jsonOn, 1, "error", saveErr.Error())
+	}
+
+	if jsonOn {
+		return successJSON(env, milestoneToJSON(m))
+	}
+	fmt.Fprintf(env.Stdout, "%s\n", id)
+	return 0
+}
+
+func runMilestoneEdit(env Env, args []string) int {
+	jsonOn := scanJSON(args)
+	res, err := parseFlags(args, milestoneEditFlags())
+	if err != nil {
+		return fail(env, jsonOn, 2, "usage", err.Error())
+	}
+	if len(res.positionals) != 1 {
+		return fail(env, jsonOn, 2, "usage", "milestone edit requires exactly one milestone id")
+	}
+	id := res.positionals[0]
+
+	_, hasTitle := res.values["title"]
+	_, hasStatus := res.values["status"]
+	_, hasDue := res.values["due"]
+	if !hasTitle && !hasStatus && !hasDue {
+		return fail(env, jsonOn, 2, "usage", "milestone edit requires at least one change")
+	}
+
+	if hasTitle {
+		newTitle := res.values["title"][len(res.values["title"])-1]
+		if strings.TrimSpace(newTitle) == "" {
+			return fail(env, jsonOn, 2, "usage", "milestone title must not be blank")
+		}
+	}
+
+	if hasDue {
+		newDue := res.values["due"][len(res.values["due"])-1]
+		if newDue != "" {
+			if errStr := validateDate(newDue); errStr != "" {
+				return fail(env, jsonOn, 2, "usage", errStr)
+			}
+		}
+	}
+
+	if _, actorErr := requireActor(env, res); actorErr != "" {
+		return fail(env, jsonOn, 2, "usage", actorErr)
+	}
+
+	s, sErr := store.Find(env.Dir)
+	if sErr != nil {
+		return storeFail(env, jsonOn, sErr, "")
+	}
+
+	m, loadErr := s.LoadMilestone(id)
+	if loadErr != nil {
+		if errors.Is(loadErr, store.ErrNotFound) {
+			return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no milestone %q", id))
+		}
+		return fail(env, jsonOn, 1, "error", loadErr.Error())
+	}
+
+	cfg, cfgErr := s.Config()
+	if cfgErr != nil {
+		return fail(env, jsonOn, 1, "error", cfgErr.Error())
+	}
+
+	if hasStatus {
+		newStatus := res.values["status"][len(res.values["status"])-1]
+		if !statusValid(newStatus, cfg) {
+			return fail(env, jsonOn, 2, "usage", fmt.Sprintf("status %q is not valid", newStatus))
+		}
+		m.Status = newStatus
+	}
+
+	if hasTitle {
+		m.Title = res.values["title"][len(res.values["title"])-1]
+	}
+
+	if hasDue {
+		m.Due = res.values["due"][len(res.values["due"])-1]
+	}
+
+	if saveErr := s.SaveMilestone(m); saveErr != nil {
+		return fail(env, jsonOn, 1, "error", saveErr.Error())
+	}
+
+	if jsonOn {
+		return successJSON(env, milestoneToJSON(m))
+	}
+	fmt.Fprintf(env.Stdout, "%s\n", id)
+	return 0
+}
+
+func milestoneToJSON(m model.Milestone) map[string]any {
+	return map[string]any{
+		"id":     m.ID,
+		"title":  m.Title,
+		"status": m.Status,
+		"due":    m.Due,
+	}
 }
 
 func validateTag(t string, cfg model.Config) string {

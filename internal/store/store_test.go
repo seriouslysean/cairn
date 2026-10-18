@@ -414,3 +414,58 @@ func TestListMilestones(t *testing.T) {
 		t.Fatalf("missing folder: %v, %v", got, err)
 	}
 }
+
+func TestSaveAndLoadMilestone(t *testing.T) {
+	s := newStore(t)
+	m := model.Milestone{ID: "v0.4", Title: "First release", Status: "open", Due: "2026-12-01",
+		Extra: []doc.Field{{Key: "owner", Value: "bob"}}, Body: "What ships.\n"}
+	if err := s.SaveMilestone(m); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(s.Dir, "milestones", "v0.4.md"))
+	want := "---\nid: v0.4\ntitle: First release\nstatus: open\ndue: 2026-12-01\nowner: bob\n---\nWhat ships.\n"
+	if err != nil || string(data) != want {
+		t.Fatalf("file: %q, %v", data, err)
+	}
+	if got, err := s.LoadMilestone("v0.4"); err != nil || !reflect.DeepEqual(got, m) {
+		t.Fatalf("load: %+v, %v", got, err)
+	}
+	// The folder is made again when it is gone.
+	if err := os.RemoveAll(filepath.Join(s.Dir, "milestones")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveMilestone(model.Milestone{ID: "v1", Title: "One", Status: "open"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LoadMilestone("v1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"", "a/b", ".hidden", ".."} {
+		if err := s.SaveMilestone(model.Milestone{ID: bad, Title: "x", Status: "open"}); err == nil {
+			t.Errorf("saved milestone id %q", bad)
+		}
+	}
+}
+
+func TestLoadMilestoneErrors(t *testing.T) {
+	s := newStore(t)
+	for _, missing := range []string{"v9", "", "a/b", ".hidden", "..", "../config"} {
+		if _, err := s.LoadMilestone(missing); !errors.Is(err, ErrNotFound) {
+			t.Errorf("%q: want ErrNotFound, got %v", missing, err)
+		}
+	}
+	dir := filepath.Join(s.Dir, "milestones")
+	for name, data := range map[string]string{
+		"broken.md": "nope",
+		"other.md":  "---\nid: something-else\ntitle: x\nstatus: open\n---\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"broken", "other"} {
+		if _, err := s.LoadMilestone(id); err == nil || errors.Is(err, ErrNotFound) {
+			t.Errorf("%q: want an error other than ErrNotFound, got %v", id, err)
+		}
+	}
+}
