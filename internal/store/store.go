@@ -298,3 +298,19 @@ func (s *Store) NewCommentID(issueID string, r io.Reader) (string, error) {
 	}
 	return "c-" + s2, nil
 }
+
+// RemoveIssue deletes issues/<id> and everything in it. It returns ErrNotFound when the id is not valid or the issue
+// does not exist.
+func (s *Store) RemoveIssue(issueID string) error {
+	if !id.Valid(issueID) {
+		return ErrNotFound
+	}
+	folder := filepath.Join(s.Dir, "issues", issueID)
+	if _, err := os.Stat(folder); err != nil {
+		if os.IsNotExist(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	return os.RemoveAll(folder)
+}

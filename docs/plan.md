@@ -57,6 +57,18 @@ Read-only context:
 
 ## Step 3: commands
 `init`, `new`, `edit`, `rm`, `show` and `ls`, with `--json`, `--as` and `CAIRN_ACTOR`, and the exit codes from the spec.
+The contract is the package comment in `internal/cli/cli.go`; `cmd/cairn` only wires it to the process.
+
+Drafter edits:
+- internal/cli/cli.go
+- internal/store/store.go
+
+Read-only context:
+- docs/spec.md
+- internal/model/model.go
+- internal/id/id.go
+- cmd/cairn/main.go
+- internal/cli/cli_test.go
 
 ## Step 4: comments
 `comment`, `retract` and `purge`. Retracted comments are hidden by default, `--all` shows them, and a new comment that
@@ -67,6 +79,15 @@ matches a retracted one triggers the warning.
 
 ## Step 6: duplicates by words
 `dupes` with the word-overlap score, plus the check that `new` runs (exit code 3, `--force`).
+
+## Version 0.1.0
+A working tracker on one checkout: steps 1 to 6, then the release step below. Everything under "Later" comes after.
+
+Release step:
+- CI runs `scripts/check.sh` on every pull request.
+- `cairn version` reports the tag: the version is set at build time with `-ldflags "-X main.version=…"`.
+- `go install github.com/seriouslysean/cairn/cmd/cairn@v0.1.0` works, and the README says how to install and start.
+- Tag `v0.1.0` on main, with a GitHub release whose notes list what works and what is not in it yet.
 
 ## Later, in this order
 1. `--branches`.
