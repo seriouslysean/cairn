@@ -1,0 +1,5 @@
+/cairn
+/dist/
+*.test
+coverage.out
+.cairn/.index/
