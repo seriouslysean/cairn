@@ -370,9 +370,6 @@ func (s *Store) ListMilestones() ([]model.Milestone, error) {
 			continue
 		}
 		idStr := strings.TrimSuffix(name, ".md")
-		if idStr == "" {
-			continue
-		}
 		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			return nil, err

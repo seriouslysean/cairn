@@ -336,7 +336,9 @@ func runHelp(env Env, args []string) int {
 	if jsonOn {
 		return successJSON(env, "cairn init | new | edit | rm | show | ls | comment | retract | purge | tags | milestones | search | version | help")
 	}
-	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n\nCommands:\n  init   new   edit   rm   show   ls   comment   retract   purge   tags   milestones   search   version   help\n")
+	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n\nCommands:\n"+
+		"  init   new   edit   rm   show   ls   comment   retract   purge   tags   milestones   search   version   help\n\n"+
+		"Cairn does not look for duplicates: run cairn search before cairn new.\n")
 	return 0
 }
 
