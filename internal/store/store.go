@@ -19,7 +19,15 @@ var (
 	ErrNoTracker = errors.New("store: no .cairn folder here or above")
 	ErrExists    = errors.New("store: .cairn folder already exists")
 	ErrNotFound  = errors.New("store: no such issue")
+	// ErrNoComment is a missing comment on an issue that exists. errors.Is(ErrNoComment, ErrNotFound) is true.
+	ErrNoComment error = noComment{}
 )
+
+type noComment struct{}
+
+func (noComment) Error() string { return "store: no such comment" }
+
+func (noComment) Is(target error) bool { return target == ErrNotFound }
 
 // Store is an open .cairn folder. Dir is its path.
 //
@@ -316,8 +324,9 @@ func (s *Store) RemoveIssue(issueID string) error {
 	return os.RemoveAll(folder)
 }
 
-// RemoveComment deletes issues/<issueID>/<commentID>.md and nothing else. It returns ErrNotFound when either id is not
-// valid, the issue does not exist, or the comment file does not exist.
+// RemoveComment deletes issues/<issueID>/<commentID>.md and nothing else, without reading it, so a file that does not
+// parse can still go. It returns ErrNotFound when the issue id is not valid or the issue does not exist, and
+// ErrNoComment when the comment id is not valid or the comment file does not exist.
 func (s *Store) RemoveComment(issueID, commentID string) error {
 	if !id.Valid(issueID) {
 		return ErrNotFound

@@ -345,3 +345,20 @@ func TestRemoveComment(t *testing.T) {
 		}
 	}
 }
+
+// A missing comment is ErrNoComment, which is also ErrNotFound; a missing issue is ErrNotFound alone.
+func TestRemoveCommentSaysWhatIsMissing(t *testing.T) {
+	s := newStore(t)
+	save(t, s, issue("7f3k", t0))
+	if err := s.RemoveComment("7f3k", "c-0001"); !errors.Is(err, ErrNoComment) || !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing comment: %v", err)
+	}
+	if err := s.RemoveComment("7f3k", "../x"); !errors.Is(err, ErrNoComment) {
+		t.Errorf("bad comment id: %v", err)
+	}
+	for _, missing := range []string{"zzzz", "../7f3k"} {
+		if err := s.RemoveComment(missing, "c-0001"); !errors.Is(err, ErrNotFound) || errors.Is(err, ErrNoComment) {
+			t.Errorf("missing issue %q: %v", missing, err)
+		}
+	}
+}

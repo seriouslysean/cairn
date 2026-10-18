@@ -583,3 +583,46 @@ func TestHelpListsCommentCommands(t *testing.T) {
 		}
 	}
 }
+
+// A failed write is exit 1 with the code "error", like every other failure the spec does not name.
+func TestCommentSaveFailure(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root writes to read-only folders")
+	}
+	tr := newTracker(t)
+	tr.issue("new", "a")
+	tr.comment("comment", "0123", "--kind", "result", "one") // c-4567
+	folder := filepath.Join(tr.dir, ".cairn", "issues", "0123")
+	if err := os.Chmod(folder, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(folder, 0o755) })
+	tr.wantError(1, "error", "comment", "0123", "--kind", "result", "two")
+	tr.wantError(1, "error", "retract", "0123", "c-4567", "--reason", "x")
+}
+
+// purge is how a bad comment file goes away, so it must work even when that file does not parse.
+func TestPurgeBrokenComment(t *testing.T) {
+	tr := newTracker(t)
+	tr.issue("new", "a")
+	broken := filepath.Join(tr.dir, ".cairn", "issues", "0123", "c-zzzz.md")
+	if err := os.WriteFile(broken, []byte("not frontmatter\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errCode := tr.json("purge", "0123", "c-zzzz"); code != 0 {
+		t.Fatalf("purge: exit %d (%s)", code, errCode)
+	}
+	if _, err := os.Stat(broken); !os.IsNotExist(err) {
+		t.Fatalf("broken comment still there: %v", err)
+	}
+}
+
+// A purge on a missing issue names the issue, not the comment.
+func TestPurgeMissingIssueNamesIt(t *testing.T) {
+	tr := newTracker(t)
+	tr.issue("new", "a")
+	code, _, errOut := tr.run("purge", "zzzz", "c-4567")
+	if code != 4 || !strings.Contains(errOut, "zzzz") {
+		t.Fatalf("exit %d, want a message naming zzzz: %q", code, errOut)
+	}
+}
