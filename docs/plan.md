@@ -72,7 +72,22 @@ Read-only context:
 
 ## Step 4: comments
 `comment`, `retract` and `purge`. Retracted comments are hidden by default, `--all` shows them, and a new comment that
-matches a retracted one triggers the warning.
+matches a retracted one triggers the warning. The match is the word-overlap score from `internal/words`, which step 6
+reuses for `dupes`. The contract is the package comment in `internal/cli/cli.go`.
+
+Drafter edits:
+- internal/cli/cli.go
+- internal/store/store.go
+- internal/words/words.go
+
+Read-only context:
+- docs/spec.md
+- internal/model/model.go
+- internal/id/id.go
+- internal/cli/cli_test.go
+- internal/cli/comment_test.go
+- internal/store/store_test.go
+- internal/words/words_test.go
 
 ## Step 5: lists and search
 `tags` (with counts), `milestones`, and `search` by words.

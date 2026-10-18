@@ -452,7 +452,6 @@ func TestLaterFlagsRejected(t *testing.T) {
 	tr := newTracker(t)
 	tr.issue("new", "a")
 	tr.wantError(2, "usage", "show", "0123", "--branches")
-	tr.wantError(2, "usage", "show", "0123", "--all")
 	tr.wantError(2, "usage", "ls", "--branches")
 }
 

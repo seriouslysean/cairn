@@ -319,3 +319,29 @@ func TestRemoveIssue(t *testing.T) {
 		t.Fatalf("RemoveIssue removed too much: %v", err)
 	}
 }
+
+func TestRemoveComment(t *testing.T) {
+	s := newStore(t)
+	save(t, s, issue("7f3k", t0), comment("c-0001", t0), comment("c-0002", t0))
+	if err := s.RemoveComment("7f3k", "c-0001"); err != nil {
+		t.Fatal(err)
+	}
+	folder := filepath.Join(s.Dir, "issues", "7f3k")
+	if _, err := os.Stat(filepath.Join(folder, "c-0001.md")); !os.IsNotExist(err) {
+		t.Fatalf("c-0001.md still there: %v", err)
+	}
+	for _, bad := range [][2]string{
+		{"7f3k", "c-0001"}, {"7f3k", "c-zzzz"}, {"7f3k", "../7f3k/issue"}, {"7f3k", "c-../x"}, {"7f3k", "issue"},
+		{"7f3k", "c-0002.md"}, {"7f3k", ""}, {"7f3k", "c-00"},
+		{"zzzz", "c-0002"}, {"../7f3k", "c-0002"}, {"", "c-0002"}, {".", "c-0002"},
+	} {
+		if err := s.RemoveComment(bad[0], bad[1]); !errors.Is(err, ErrNotFound) {
+			t.Errorf("RemoveComment(%q, %q): %v", bad[0], bad[1], err)
+		}
+	}
+	for _, name := range []string{"issue.md", "c-0002.md"} {
+		if _, err := os.Stat(filepath.Join(folder, name)); err != nil {
+			t.Errorf("RemoveComment removed too much: %v", err)
+		}
+	}
+}

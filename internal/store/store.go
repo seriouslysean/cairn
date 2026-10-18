@@ -23,8 +23,9 @@ var (
 
 // Store is an open .cairn folder. Dir is its path.
 //
-// Ids become paths, so every method checks them first: an issue id that fails id.Valid is ErrNotFound for reads
-// and an error for writes, and a comment id that fails id.ValidComment is an error.
+// Ids become paths, so every method checks them first. An issue id that fails id.Valid is ErrNotFound for reads and
+// removals and an error for saves. A comment id that fails id.ValidComment is ErrNotFound for removals and an error
+// for saves.
 type Store struct {
 	Dir string
 }
@@ -313,4 +314,10 @@ func (s *Store) RemoveIssue(issueID string) error {
 		return err
 	}
 	return os.RemoveAll(folder)
+}
+
+// RemoveComment deletes issues/<issueID>/<commentID>.md and nothing else. It returns ErrNotFound when either id is not
+// valid, the issue does not exist, or the comment file does not exist.
+func (s *Store) RemoveComment(issueID, commentID string) error {
+	panic("todo: step 4")
 }
