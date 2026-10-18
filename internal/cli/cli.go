@@ -1,12 +1,13 @@
 // Package cli runs cairn's commands. It never prompts and never opens an editor.
 //
-// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json and --all take no value.
+// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json, --all and --branches take no
+// value.
 // Flags and positional arguments can come in any order, and "--" ends the flags. A flag that takes a value
 // takes the next argument even when it starts with "-", so "--tag -t" works, but not one that starts with "--": that
 // is a missing value, and "--name=--value" passes such a value. --tag can be repeated; for any other flag the last
 // one wins. No arguments at all is a usage error. "--help" and "-h" mean help, and "--version" means version.
-// --branches and search --meaning, which later steps build, are usage errors until then, and so is --all anywhere but
-// show.
+// search --meaning, which a later step builds, is a usage error until then. So are --all anywhere but show and
+// --branches anywhere but ls and show.
 //
 // Output: --json anywhere before "--" turns on JSON, even when the other arguments are wrong. With --json, success
 // prints {"ok": true, "data": …} and failure prints
@@ -49,6 +50,16 @@
 //   - ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]: lists issues in store order. Every filter
 //     given must match; --due-before keeps issues with a due date before d. Text: one "<id>\t<status>\t<title>\n"
 //     line per issue. Data: a list of issues without "body" (an empty list, never null).
+//   - --branches, on ls and show, adds what active branches committed, as branchIssues reads it. Without it Cairn
+//     never runs git. With it, failing to read git (no git, no repository, no default branch) is an "error", and each
+//     warning branchIssues returns is printed as a warning.
+//   - ls --branches: the checkout's rows, then the branch versions, all through the same filters. Text: a branch
+//     version's line is "<id>\t<status>\t<title>\t<branch>\n". Data: every item also has "branch" ("" for the
+//     checkout).
+//   - show <id> --branches: the checkout's version of the issue, then each branch version of it, by branch;
+//     not_found when there is none. --all applies to each. Text: each version as show prints it, a branch version
+//     after a line "=== branch <name> ===", with a blank line before every version but the first. Data: a list of
+//     show's data, each with "branch" ("" for the checkout), a list even when there is one version.
 //   - comment <id> --kind evidence|decision|result [--source s] "text": adds a comment with a new id, by, persona and
 //     model from the actor flags, and at set to Env.Now as in new. The text must not be blank, and gets a trailing
 //     "\n" as a body does. evidence needs a --source that is not blank; any other kind, github included, is a usage
@@ -292,14 +303,14 @@ func rmFlags() map[string]flagSpec {
 
 func showFlags() map[string]flagSpec {
 	return map[string]flagSpec{
-		"json": {false, false}, "all": {false, false},
+		"json": {false, false}, "all": {false, false}, "branches": {false, false},
 	}
 }
 
 func lsFlags() map[string]flagSpec {
 	return map[string]flagSpec{
 		"json": {false, false}, "status": {true, false}, "tag": {true, true},
-		"milestone": {true, false}, "due-before": {true, false},
+		"milestone": {true, false}, "due-before": {true, false}, "branches": {false, false},
 	}
 }
 
@@ -380,8 +391,8 @@ var commandUsage = []string{
 	`new "title" [--body text] [--tag t]... [--milestone m] [--due YYYY-MM-DD]`,
 	`edit <id> [--title t] [--body text] [--status s] [--tag +t|-t]... [--milestone m] [--due YYYY-MM-DD]`,
 	`rm <id>`,
-	`show <id> [--all]`,
-	`ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]`,
+	`show <id> [--all] [--branches]`,
+	`ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD] [--branches]`,
 	`comment <id> --kind evidence|decision|result [--source s] "text"`,
 	`retract <id> <comment> --reason "text" [--disproved-by <comment>]`,
 	`purge <id> <comment>`,
@@ -675,28 +686,91 @@ func runShow(env Env, args []string) int {
 	if sErr != nil {
 		return storeFail(env, jsonOn, sErr, "")
 	}
+	if res.bools["branches"] {
+		return showBranches(env, jsonOn, s, issueID, allComments)
+	}
 	issue, comments, loadErr := s.LoadIssue(issueID)
 	if loadErr != nil {
 		return storeFail(env, jsonOn, loadErr, issueID)
 	}
-
-	// Filter out retracted comments unless --all.
-	var shown []model.Comment
-	for _, c := range comments {
-		if !allComments && c.RetractedBy != "" {
-			continue
-		}
-		shown = append(shown, c)
-	}
-
+	shown := visible(comments, allComments)
 	if jsonOn {
-		data := issueToJSONMap(issue, true)
-		data["comments"] = commentsToJSON(shown)
-		return successJSON(env, data)
+		return successJSON(env, showData(issue, shown))
 	}
-
 	printIssue(env.Stdout, issue, shown)
 	return 0
+}
+
+// showBranches is show --branches: the checkout's version of the issue when it has one, then every branch version.
+func showBranches(env Env, jsonOn bool, s *store.Store, issueID string, all bool) int {
+	var versions []branchVersion
+	issue, comments, err := s.LoadIssue(issueID)
+	switch {
+	case err == nil:
+		versions = append(versions, branchVersion{Issue: issue, Comments: comments})
+	case !errors.Is(err, store.ErrNotFound):
+		return storeFail(env, jsonOn, err, issueID)
+	}
+	onBranches, err := branchVersions(env, s)
+	if err != nil {
+		return fail(env, jsonOn, 1, "error", err.Error())
+	}
+	for _, v := range onBranches {
+		if v.Issue.ID == issueID {
+			versions = append(versions, v)
+		}
+	}
+	if len(versions) == 0 {
+		return storeFail(env, jsonOn, store.ErrNotFound, issueID)
+	}
+	if jsonOn {
+		data := make([]map[string]any, len(versions))
+		for k, v := range versions {
+			data[k] = showData(v.Issue, visible(v.Comments, all))
+			data[k]["branch"] = v.Branch
+		}
+		return successJSON(env, data)
+	}
+	for k, v := range versions {
+		if k > 0 {
+			fmt.Fprintln(env.Stdout)
+		}
+		if v.Branch != "" {
+			fmt.Fprintf(env.Stdout, "=== branch %s ===\n", v.Branch)
+		}
+		printIssue(env.Stdout, v.Issue, visible(v.Comments, all))
+	}
+	return 0
+}
+
+// branchVersions runs branchIssues and prints its warnings.
+func branchVersions(env Env, s *store.Store) ([]branchVersion, error) {
+	versions, warnings, err := branchIssues(env, s)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range warnings {
+		fmt.Fprintf(env.Stderr, "cairn: warning: %s\n", w)
+	}
+	return versions, nil
+}
+
+// visible is the comments show prints: the active ones, or all of them with --all.
+func visible(comments []model.Comment, all bool) []model.Comment {
+	var shown []model.Comment
+	for _, c := range comments {
+		if all || c.RetractedBy == "" {
+			shown = append(shown, c)
+		}
+	}
+	return shown
+}
+
+// showData is show's data for an issue and the comments it shows.
+func showData(issue model.Issue, comments []model.Comment) map[string]any {
+	data := issueToJSONMap(issue, true)
+	data["comments"] = commentsToJSON(comments)
+	return data
 }
 
 func runLs(env Env, args []string) int {
@@ -728,16 +802,41 @@ func runLs(env Env, args []string) int {
 			filtered = append(filtered, iss)
 		}
 	}
+	withBranches := res.bools["branches"]
+	var onBranches []branchVersion
+	if withBranches {
+		versions, err := branchVersions(env, s)
+		if err != nil {
+			return fail(env, jsonOn, 1, "error", err.Error())
+		}
+		for _, v := range versions {
+			if keep(v.Issue) {
+				onBranches = append(onBranches, v)
+			}
+		}
+	}
 
 	if jsonOn {
-		items := make([]map[string]any, len(filtered))
-		for idx, iss := range filtered {
-			items[idx] = issueToJSONMap(iss, false)
+		items := make([]map[string]any, 0, len(filtered)+len(onBranches))
+		for _, iss := range filtered {
+			item := issueToJSONMap(iss, false)
+			if withBranches {
+				item["branch"] = ""
+			}
+			items = append(items, item)
+		}
+		for _, v := range onBranches {
+			item := issueToJSONMap(v.Issue, false)
+			item["branch"] = v.Branch
+			items = append(items, item)
 		}
 		return successJSON(env, items)
 	}
 	for _, iss := range filtered {
 		fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", iss.ID, iss.Status, iss.Title)
+	}
+	for _, v := range onBranches {
+		fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\n", v.Issue.ID, v.Issue.Status, v.Issue.Title, v.Branch)
 	}
 	return 0
 }

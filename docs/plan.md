@@ -137,13 +137,31 @@ Release step:
 - `go install github.com/seriouslysean/cairn/cmd/cairn@v0.1.0` works, and the README says how to install and start.
 - Tag `v0.1.0` on main, with a GitHub release whose notes list what works and what is not in it yet.
 
+## Step 7: --branches
+`ls --branches` and `show --branches`, so an agent sees what other branches and worktrees have committed to the
+tracker before it merges. It comes first after v0.1.0 because several agents on several branches is the case
+dogfooding meets first. The contract is the package comment in `internal/cli/cli.go` and the doc comment of
+`branchIssues` in `internal/cli/branches.go`. `ls` and `show` are already wired to `branchIssues` and print what it
+returns; the step's code is `branchIssues`, which reads git.
+
+Drafter edits:
+- internal/cli/branches.go
+
+Read-only context:
+- docs/spec.md
+- internal/cli/cli.go
+- internal/cli/branches_test.go
+- internal/store/store.go
+- internal/model/model.go
+- internal/doc/front.go
+- internal/id/id.go
+
 ## Later, in this order
-1. `--branches`.
-2. Meaning search (`.index/`).
-3. `board` and `board --html`.
-4. `pull`.
-5. `push`.
-6. Release: CI, tagged builds, a Homebrew tap.
+1. `pull`, one way: GitHub issues and their comments become Cairn issues and comments.
+2. `push`.
+3. Meaning search (`.index/`).
+4. `board` and `board --html`.
+5. Release: CI, tagged builds, a Homebrew tap.
 
 Not planned: duplicate checks. The spec had `dupes` and a check before `new` (exit code 3, `--force`); word overlap
 could not tell a duplicate from a template title, so both wait in the backlog as #15 and #16.

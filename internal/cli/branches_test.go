@@ -358,7 +358,8 @@ func TestBranchesBrokenFile(t *testing.T) {
 	tr.git("switch", "-q", "-c", "bad")
 	broken := tr.issue("new", "Broken").ID
 	good := tr.issue("new", "Good").ID
-	if err := os.WriteFile(filepath.Join(tr.dir, ".cairn", "issues", broken, "issue.md"), []byte("nope"), 0o644); err != nil {
+	path := filepath.Join(tr.dir, ".cairn", "issues", broken, "issue.md")
+	if err := os.WriteFile(path, []byte("nope"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	tr.commit(t0.Add(-time.Hour), "bad")
