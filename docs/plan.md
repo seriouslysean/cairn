@@ -4,7 +4,7 @@ Each step is one PR, made like this:
 1. The reviewer writes the step's tests first, as the spec.
 2. The drafter (any model, local or hosted) writes only the files listed under "Drafter edits". The tests are context
    and must not change.
-3. The reviewer runs `gofmt -l .`, `go vet ./...` and `go test ./...`, reads the diff, and opens the PR.
+3. The reviewer runs `scripts/check.sh`, reads the diff, and opens the PR.
 
 A drafter replies with every file it changes, in full, and nothing else:
 
