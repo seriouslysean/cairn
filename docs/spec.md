@@ -32,8 +32,8 @@ milestone: v0.4
 due: 2026-11-01
 by: alice
 model: example-model-1
-created: 2026-10-17T19:00:00Z
-updated: 2026-10-17T19:20:00Z
+created: 2026-10-17T19:00:00.000Z
+updated: 2026-10-17T19:20:00.000Z
 github: 123
 ---
 What is wrong, why it matters, and what "done" means.
@@ -44,8 +44,9 @@ What is wrong, why it matters, and what "done" means.
   later.
 - They are what the writer gave, not checked identities. `model` names the model that ran the command, not
   necessarily the author of every word.
-`github` appears only after a sync. Dates are `YYYY-MM-DD`; times are UTC RFC 3339, with fractional seconds when the time has them, so comments made in
-the same second still sort in order.
+`github` appears only after a sync. Dates are `YYYY-MM-DD`. Times are UTC RFC 3339 with exactly three fraction
+digits, such as `2026-10-17T19:20:00.000Z`, so every time is 24 characters and times sort the same as text as they
+do as times. Files written by v0.1.0, which dropped trailing zeros, still load.
 
 ### Comment
 ```
@@ -55,7 +56,7 @@ kind: evidence
 by: alice
 persona: skeptic
 model: example-model-1
-at: 2026-10-17T19:20:00Z
+at: 2026-10-17T19:20:00.000Z
 source: export_test.go:42
 ---
 The last row is dropped when the file has no trailing newline.

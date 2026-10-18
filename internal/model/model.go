@@ -6,8 +6,8 @@
 // order, in Extra (nil when there are none), and written back after the known keys, so a file from a newer Cairn
 // survives an edit.
 //
-// Dates are "2006-01-02". Times are RFC 3339: they parse with or without fractional seconds and with any offset,
-// are converted to UTC, and are written with time.RFC3339Nano, so whole seconds print without a fraction.
+// Dates are "2006-01-02". Times are RFC 3339: they parse with or without fractional seconds and with any offset, and
+// are converted to UTC. FormatTime writes them, always with three fraction digits.
 package model
 
 import (
@@ -19,6 +19,15 @@ import (
 	"github.com/seriouslysean/cairn/internal/doc"
 	"github.com/seriouslysean/cairn/internal/id"
 )
+
+// TimeLayout is how every time is written: UTC, with three fraction digits, so every time is 24 characters and times
+// compare the same as text as they do as times.
+const TimeLayout = "2006-01-02T15:04:05.000Z07:00"
+
+// FormatTime writes t in TimeLayout, in UTC.
+func FormatTime(t time.Time) string {
+	return t.UTC().Format(TimeLayout)
+}
 
 // Issue is the issue.md file of an issue folder. Required keys: id, title, status, created, updated. The others are
 // left out of the file when empty (GitHub when 0).
@@ -197,8 +206,8 @@ func (i Issue) Fields() []doc.Field {
 		}
 	}
 	fields = append(fields,
-		doc.Field{Key: "created", Value: i.Created.Format(time.RFC3339Nano)},
-		doc.Field{Key: "updated", Value: i.Updated.Format(time.RFC3339Nano)},
+		doc.Field{Key: "created", Value: FormatTime(i.Created)},
+		doc.Field{Key: "updated", Value: FormatTime(i.Updated)},
 	)
 	if i.GitHub != 0 {
 		fields = append(fields, doc.Field{Key: "github", Value: strconv.Itoa(i.GitHub)})
@@ -296,7 +305,7 @@ func (c Comment) Fields() []doc.Field {
 	if c.Model != "" {
 		fields = append(fields, doc.Field{Key: "model", Value: c.Model})
 	}
-	fields = append(fields, doc.Field{Key: "at", Value: c.At.Format(time.RFC3339Nano)})
+	fields = append(fields, doc.Field{Key: "at", Value: FormatTime(c.At)})
 	if c.Source != "" {
 		fields = append(fields, doc.Field{Key: "source", Value: c.Source})
 	}
@@ -304,7 +313,7 @@ func (c Comment) Fields() []doc.Field {
 		fields = append(fields, doc.Field{Key: "retracted_by", Value: c.RetractedBy})
 	}
 	if !c.RetractedAt.IsZero() {
-		fields = append(fields, doc.Field{Key: "retracted_at", Value: c.RetractedAt.Format(time.RFC3339Nano)})
+		fields = append(fields, doc.Field{Key: "retracted_at", Value: FormatTime(c.RetractedAt)})
 	}
 	if c.RetractedReason != "" {
 		fields = append(fields, doc.Field{Key: "retracted_reason", Value: c.RetractedReason})
