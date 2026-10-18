@@ -1,6 +1,6 @@
 // Package cli runs cairn's commands. It never prompts and never opens an editor.
 //
-// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json and --force take no value.
+// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json and --all take no value.
 // Flags and positional arguments can come in any order, and "--" ends the flags. A flag that takes a value
 // takes the next argument even when it starts with "-", so "--tag -t" works, but not one that starts with "--": that
 // is a missing value, and "--name=--value" passes such a value. --tag can be repeated; for any other flag the last
@@ -31,11 +31,10 @@
 // Commands:
 //   - init: makes .cairn in Env.Dir (it does not look upward). Text: "initialized <the .cairn path>\n". Data:
 //     {"dir": the .cairn path}.
-//   - new "title" [--body text] [--tag t]... [--milestone m] [--due YYYY-MM-DD] [--force]: adds an issue with the
+//   - new "title" [--body text] [--tag t]... [--milestone m] [--due YYYY-MM-DD]: adds an issue with the
 //     config's first status, created and updated set to Env.Now in UTC truncated to the millisecond, and a new id.
-//     The title must not be blank. A non-empty body that does not end in "\n" gets one. --force is accepted (step 6
-//     uses it). Repeated tags are kept once. A config with no statuses is an "error". Text: the id and "\n".
-//     Data: the issue.
+//     The title must not be blank. A non-empty body that does not end in "\n" gets one. Repeated tags are kept once.
+//     A config with no statuses is an "error". Text: the id and "\n". Data: the issue.
 //   - edit <id> [--title t] [--body text] [--status s] [--tag +t] [--tag -t] [--milestone m] [--due d]: changes
 //     only what is given, and at least one change is required. "+t" or "t" adds a tag (no duplicates), "-t" removes
 //     it; a removed tag only has to be non-empty, so a tag whose group left the config can still go. An empty
@@ -229,7 +228,7 @@ func parseFlags(args []string, valid map[string]flagSpec) (*parseResult, error) 
 
 func newFlags() map[string]flagSpec {
 	return map[string]flagSpec{
-		"json": {false, false}, "force": {false, false}, "as": {true, false},
+		"json": {false, false}, "as": {true, false},
 		"persona": {true, false}, "model": {true, false},
 		"body": {true, false}, "tag": {true, true}, "milestone": {true, false},
 		"due": {true, false},
