@@ -247,3 +247,56 @@ func TestNewCommentID(t *testing.T) {
 		t.Fatalf("got %q, %v", got, err)
 	}
 }
+
+// A broken issue file must surface, not vanish from the list. A folder without issue.md is skipped.
+func TestListIssuesErrors(t *testing.T) {
+	s := newStore(t)
+	save(t, s, issue("aaaa", t0))
+	if err := os.Mkdir(filepath.Join(s.Dir, "issues", "bbbb"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.ListIssues(); err != nil || len(got) != 1 {
+		t.Fatalf("folder without issue.md: %v, %v", got, err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir, "issues", "bbbb", "issue.md"), []byte("not frontmatter"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ListIssues(); err == nil {
+		t.Fatal("broken issue.md: want an error")
+	}
+	if err := os.Rename(filepath.Join(s.Dir, "issues", "aaaa"), filepath.Join(s.Dir, "issues", "cccc")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(s.Dir, "issues", "bbbb")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ListIssues(); err == nil {
+		t.Fatal("id that does not match its folder: want an error")
+	}
+}
+
+// Ids become paths, so an id that is not valid must never reach the file system.
+func TestBadIDsNeverBecomePaths(t *testing.T) {
+	s := newStore(t)
+	save(t, s, issue("7f3k", t0))
+	for _, bad := range []string{"../7f3k", "7f3k/..", "", "."} {
+		if _, _, err := s.LoadIssue(bad); !errors.Is(err, ErrNotFound) {
+			t.Errorf("LoadIssue(%q): %v", bad, err)
+		}
+		if _, err := s.NewCommentID(bad, nil); !errors.Is(err, ErrNotFound) {
+			t.Errorf("NewCommentID(%q): %v", bad, err)
+		}
+		if err := s.SaveComment(bad, comment("c-0001", t0)); err == nil {
+			t.Errorf("SaveComment(%q): want an error", bad)
+		}
+	}
+	if err := s.SaveIssue(issue("../x", t0)); err == nil {
+		t.Error("SaveIssue with a bad id: want an error")
+	}
+	if err := s.SaveComment("7f3k", comment("c-../../x", t0)); err == nil {
+		t.Error("SaveComment with a bad comment id: want an error")
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir, "x")); !os.IsNotExist(err) {
+		t.Error("a bad id wrote outside issues/")
+	}
+}
