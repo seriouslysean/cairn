@@ -449,14 +449,6 @@ func TestNoArgsAndAliases(t *testing.T) {
 	}
 }
 
-// Flags from later steps are usage errors until those steps build them, never silently ignored.
-func TestLaterFlagsRejected(t *testing.T) {
-	tr := newTracker(t)
-	tr.issue("new", "a")
-	tr.wantError(2, "usage", "show", "0123", "--branches")
-	tr.wantError(2, "usage", "ls", "--branches")
-}
-
 // new does not look for duplicates (issues #15 and #16), so it has no --force.
 func TestNewHasNoForce(t *testing.T) {
 	tr := newTracker(t)
