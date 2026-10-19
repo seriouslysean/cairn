@@ -30,15 +30,15 @@ type comment struct {
 	Retracted *retraction `json:"retracted"`
 }
 
-type warning struct {
+type retractedMatch struct {
 	Comment string  `json:"comment"`
 	Reason  string  `json:"reason"`
 	Score   float64 `json:"score"`
 }
 
 type added struct {
-	Comment  comment   `json:"comment"`
-	Warnings []warning `json:"warnings"`
+	Comment          comment          `json:"comment"`
+	RetractedMatches []retractedMatch `json:"retracted_matches"`
 }
 
 // comment runs a comment command with --json and returns its data.
@@ -133,8 +133,8 @@ func TestComment(t *testing.T) {
 	if !reflect.DeepEqual(got.Comment, want) {
 		t.Fatalf("comment\ngot  %+v\nwant %+v", got.Comment, want)
 	}
-	if got.Warnings == nil || len(got.Warnings) != 0 {
-		t.Fatalf("warnings must be an empty list, got %#v", got.Warnings)
+	if got.RetractedMatches == nil || len(got.RetractedMatches) != 0 {
+		t.Fatalf("retracted_matches must be an empty list, got %#v", got.RetractedMatches)
 	}
 	if _, err := os.Stat(filepath.Join(tr.dir, ".cairn", "issues", "0123", "c-4567.md")); err != nil {
 		t.Fatal(err)
@@ -163,8 +163,8 @@ func TestCommentJSONShape(t *testing.T) {
 	tr.issue("new", "a")
 	_, data, _ := tr.json("comment", "0123", "--kind", "result", "done")
 	var top map[string]json.RawMessage
-	if err := json.Unmarshal(data, &top); err != nil || len(top) != 2 || string(top["warnings"]) != "[]" {
-		t.Fatalf(`want {"comment", "warnings": []}, got %s`, data)
+	if err := json.Unmarshal(data, &top); err != nil || len(top) != 2 || string(top["retracted_matches"]) != "[]" {
+		t.Fatalf(`want {"comment", "retracted_matches": []}, got %s`, data)
 	}
 	var c map[string]any
 	if err := json.Unmarshal(top["comment"], &c); err != nil {
@@ -193,12 +193,12 @@ func TestCommentJSONShape(t *testing.T) {
 	}
 
 	tr.retract("0123", "c-4567", "--reason", "wrong issue")
-	_, data, _ = tr.json("show", "0123", "--all")
+	_, data, _ = tr.json("show", "0123", "--retracted")
 	var all struct {
 		Comments []map[string]any `json:"comments"`
 	}
 	if err := json.Unmarshal(data, &all); err != nil || len(all.Comments) != 1 {
-		t.Fatalf("show --all: %s", data)
+		t.Fatalf("show --retracted: %s", data)
 	}
 	wantRetracted := map[string]any{"by": "alice", "at": "2026-10-18T09:30:00.123Z", "reason": "wrong issue",
 		"disproved_by": ""}
@@ -268,7 +268,7 @@ func TestCommentUsageErrors(t *testing.T) {
 		{"comment", "0123", "--kind", "Result", "kinds are exact"},
 		{"comment", "0123", "--kind", "result", "   "},
 		{"comment", "0123", "--kind", "result", "two", "texts"},
-		{"comment", "0123", "--kind", "result", "--all", "show only"},
+		{"comment", "0123", "--kind", "result", "--retracted", "show only"},
 		{"comment", "0123", "--kind", "result", "--branches", "later"},
 		{"comment", "0123", "--kind"},
 	} {
@@ -327,12 +327,12 @@ func TestRetract(t *testing.T) {
 		t.Fatalf("retract\ngot  %+v\nwant %+v", got, want)
 	}
 
-	// show leaves it out, and --all keeps it in its place, marked.
+	// show leaves it out, and --retracted keeps it in its place, marked.
 	if cs := tr.comments("0123"); !reflect.DeepEqual(cs, []comment{second}) {
 		t.Fatalf("show\ngot  %+v\nwant %+v", cs, []comment{second})
 	}
-	if cs := tr.comments("0123", "--all"); !reflect.DeepEqual(cs, []comment{want, second}) {
-		t.Fatalf("show --all\ngot  %+v\nwant %+v", cs, []comment{want, second})
+	if cs := tr.comments("0123", "--retracted"); !reflect.DeepEqual(cs, []comment{want, second}) {
+		t.Fatalf("show --retracted\ngot  %+v\nwant %+v", cs, []comment{want, second})
 	}
 
 	// The file keeps the comment and adds the spec's fields.
@@ -352,8 +352,8 @@ func TestRetract(t *testing.T) {
 		out != "retracted c-89ab\n" {
 		t.Fatalf("text: exit %d, %q", code, out)
 	}
-	if cs := tr.comments("0123", "--all"); len(cs) != 2 || cs[1].Retracted == nil || cs[1].Retracted.DisprovedBy != "" {
-		t.Fatalf("show --all: %+v", cs)
+	if cs := tr.comments("0123", "--retracted"); len(cs) != 2 || cs[1].Retracted == nil || cs[1].Retracted.DisprovedBy != "" {
+		t.Fatalf("show --retracted: %+v", cs)
 	}
 }
 
@@ -370,7 +370,7 @@ func TestRetractErrors(t *testing.T) {
 		{"retract", "0123", "c-4567", "--reason", "   "},
 		{"retract", "0123", "c-4567", "c-89ab", "--reason", "x"},
 		{"retract", "0123", "c-4567", "--reason", "x", "--disproved-by", "c-4567"},
-		{"retract", "0123", "c-4567", "--reason", "x", "--all"},
+		{"retract", "0123", "c-4567", "--reason", "x", "--retracted"},
 	} {
 		tr.wantError(2, "usage", args...)
 	}
@@ -392,7 +392,7 @@ func TestRetractErrors(t *testing.T) {
 	// A comment is retracted once, and a second retract leaves the first one as it was.
 	tr.retract("0123", "c-4567", "--reason", "first reason")
 	tr.wantError(1, "error", "retract", "0123", "c-4567", "--reason", "second reason")
-	if cs := tr.comments("0123", "--all"); cs[0].Retracted == nil || cs[0].Retracted.Reason != "first reason" {
+	if cs := tr.comments("0123", "--retracted"); cs[0].Retracted == nil || cs[0].Retracted.Reason != "first reason" {
 		t.Fatalf("after a second retract: %+v", cs[0])
 	}
 }
@@ -411,8 +411,8 @@ func TestPurge(t *testing.T) {
 	if got := tr.files("0123"); !reflect.DeepEqual(got, []string{"c-89ab.md", "issue.md"}) {
 		t.Fatalf("files: %q", got)
 	}
-	if cs := tr.comments("0123", "--all"); !reflect.DeepEqual(cs, []comment{keep}) {
-		t.Fatalf("show --all: %+v", cs)
+	if cs := tr.comments("0123", "--retracted"); !reflect.DeepEqual(cs, []comment{keep}) {
+		t.Fatalf("show --retracted: %+v", cs)
 	}
 	tr.wantError(4, "not_found", "purge", "0123", "c-4567")
 
@@ -421,8 +421,8 @@ func TestPurge(t *testing.T) {
 	if code, out, _ := tr.run("purge", "0123", "c-89ab"); code != 0 || out != "purged c-89ab\n" {
 		t.Fatalf("text: exit %d, %q", code, out)
 	}
-	if cs := tr.comments("0123", "--all"); len(cs) != 0 {
-		t.Fatalf("show --all: %+v", cs)
+	if cs := tr.comments("0123", "--retracted"); len(cs) != 0 {
+		t.Fatalf("show --retracted: %+v", cs)
 	}
 }
 
@@ -455,7 +455,7 @@ func TestRetractedMatchWarns(t *testing.T) {
 	tr.comment("comment", "0123", "--kind", "evidence", "--source", "log.txt", "a b c d") // c-4567
 	tr.retract("0123", "c-4567", "--reason", "wrong:\nthe log was old")
 
-	// 3 shared words of 5 is 0.6, which reaches dupe_text: the comment is still added, with a warning.
+	// 3 shared words of 5 is 0.6, which reaches retracted_match: the comment is still added, with a warning.
 	code, out, errOut := tr.run("comment", "0123", "--kind", "result", "A b, c e.")
 	if code != 0 || out != "c-89ab\n" {
 		t.Fatalf("text: exit %d, %q", code, out)
@@ -473,8 +473,8 @@ func TestRetractedMatchWarns(t *testing.T) {
 	if code != 0 || json.Unmarshal([]byte(out), &env) != nil || !env.OK {
 		t.Fatalf("json: exit %d, %q", code, out)
 	}
-	want := []warning{{Comment: "c-4567", Reason: "wrong:\nthe log was old", Score: 0.6}}
-	if !reflect.DeepEqual(env.Data.Warnings, want) || env.Data.Comment.ID != "c-cdef" {
+	want := []retractedMatch{{Comment: "c-4567", Reason: "wrong:\nthe log was old", Score: 0.6}}
+	if !reflect.DeepEqual(env.Data.RetractedMatches, want) || env.Data.Comment.ID != "c-cdef" {
 		t.Fatalf("json warnings\ngot  %+v\nwant %+v", env.Data, want)
 	}
 	if lines := warningLines(t, errOut); len(lines) != 1 || !strings.Contains(lines[0], "c-4567") {
@@ -488,17 +488,17 @@ func TestRetractedMatchWarns(t *testing.T) {
 
 	// A near copy of an active comment does not warn: only retracted comments count.
 	tr.comment("comment", "0123", "--kind", "result", "x y z")
-	if a := tr.comment("comment", "0123", "--kind", "result", "x y z"); len(a.Warnings) != 0 {
-		t.Fatalf("active match warned: %+v", a.Warnings)
+	if a := tr.comment("comment", "0123", "--kind", "result", "x y z"); len(a.RetractedMatches) != 0 {
+		t.Fatalf("active match warned: %+v", a.RetractedMatches)
 	}
 
 	// Two retracted matches give two warnings, in comment order.
 	tr.comment("comment", "0123", "--kind", "result", "a b c d") // c-wxyz
 	tr.retract("0123", "c-wxyz", "--reason", "again")
 	a := tr.comment("comment", "0123", "--kind", "result", "a b c d")
-	if len(a.Warnings) != 2 || a.Warnings[0].Comment != "c-4567" || a.Warnings[1].Comment != "c-wxyz" ||
-		a.Warnings[1].Score != 1 {
-		t.Fatalf("two matches: %+v", a.Warnings)
+	if len(a.RetractedMatches) != 2 || a.RetractedMatches[0].Comment != "c-4567" || a.RetractedMatches[1].Comment != "c-wxyz" ||
+		a.RetractedMatches[1].Score != 1 {
+		t.Fatalf("two matches: %+v", a.RetractedMatches)
 	}
 }
 
@@ -510,28 +510,28 @@ func TestRetractedMatchScope(t *testing.T) {
 	tr.retract(first, c.ID, "--reason", "it was not")
 
 	// Only the same issue counts.
-	if a := tr.comment("comment", second, "--kind", "result", "the cache is stale"); len(a.Warnings) != 0 {
-		t.Fatalf("another issue's retracted comment warned: %+v", a.Warnings)
+	if a := tr.comment("comment", second, "--kind", "result", "the cache is stale"); len(a.RetractedMatches) != 0 {
+		t.Fatalf("another issue's retracted comment warned: %+v", a.RetractedMatches)
 	}
 
-	// The threshold is the config's dupe_text.
+	// The threshold is the config's retracted_match.
 	path := filepath.Join(tr.dir, ".cairn", "config.yml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	raised := strings.Replace(string(data), "dupe_text: 0.6\n", "dupe_text: 0.9\n", 1)
+	raised := strings.Replace(string(data), "retracted_match: 0.6\n", "retracted_match: 0.9\n", 1)
 	if raised == string(data) {
-		t.Fatalf("config has no dupe_text: 0.6:\n%s", data)
+		t.Fatalf("config has no retracted_match: 0.6:\n%s", data)
 	}
 	if err := os.WriteFile(path, []byte(raised), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if a := tr.comment("comment", first, "--kind", "result", "the cache is stale now"); len(a.Warnings) != 0 {
-		t.Fatalf("0.8 warned with dupe_text 0.9: %+v", a.Warnings)
+	if a := tr.comment("comment", first, "--kind", "result", "the cache is stale now"); len(a.RetractedMatches) != 0 {
+		t.Fatalf("0.8 warned with retracted_match 0.9: %+v", a.RetractedMatches)
 	}
-	if a := tr.comment("comment", first, "--kind", "result", "The cache is STALE"); len(a.Warnings) != 1 {
-		t.Fatalf("1.0 did not warn with dupe_text 0.9: %+v", a.Warnings)
+	if a := tr.comment("comment", first, "--kind", "result", "The cache is STALE"); len(a.RetractedMatches) != 1 {
+		t.Fatalf("1.0 did not warn with retracted_match 0.9: %+v", a.RetractedMatches)
 	}
 }
 
@@ -555,22 +555,29 @@ func TestShowTextComments(t *testing.T) {
 	}
 	for _, s := range []string{"c-89ab", "Keep the old format", "the owner changed their mind"} {
 		if strings.Contains(out, s) {
-			t.Errorf("show without --all has %q: %q", s, out)
+			t.Errorf("show without --retracted has %q: %q", s, out)
 		}
 	}
 
-	_, out, _ = tr.run("show", "0123", "--all")
+	_, out, _ = tr.run("show", "0123", "--retracted")
 	for _, s := range []string{"c-4567", "c-89ab", "Keep the old format", "retracted", "the owner changed their mind"} {
 		if !strings.Contains(out, s) {
-			t.Errorf("show --all: no %q in %q", s, out)
+			t.Errorf("show --retracted: no %q in %q", s, out)
 		}
 	}
 }
 
-func TestAllIsOnlyForShow(t *testing.T) {
+func TestRetractedIsOnlyForShow(t *testing.T) {
 	tr := newTracker(t)
 	tr.issue("new", "a")
-	tr.wantError(2, "usage", "ls", "--all")
+	tr.wantError(2, "usage", "ls", "--retracted")
+}
+
+// --retracted was --all before step 9, and the old name is gone: no alias.
+func TestShowAllIsGone(t *testing.T) {
+	tr := newTracker(t)
+	tr.issue("new", "a")
+	tr.wantError(2, "usage", "show", "0123", "--all")
 }
 
 func TestHelpListsCommentCommands(t *testing.T) {

@@ -37,7 +37,7 @@ func TestTimesHaveOneWidth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, show, _ := tr.run("show", i.ID, "--all")
+	_, show, _ := tr.run("show", i.ID, "--retracted")
 	for name, text := range map[string]string{"issue.md": string(issueFile), "show": show} {
 		for _, line := range []string{"created: 2026-10-18T09:30:00.000Z\n", "updated: 2026-10-18T09:30:00.000Z\n"} {
 			if !strings.Contains(text, line) {
