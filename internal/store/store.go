@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -393,6 +394,12 @@ func (s *Store) SaveMilestone(m model.Milestone) error {
 
 func (s *Store) issueDir(issueID string) string {
 	return filepath.Join(s.Dir, IssuesDir, issueID)
+}
+
+// MilestoneFile is the file of milestone milestoneID relative to the tracker's folder, with "/" between names as git
+// takes them.
+func MilestoneFile(milestoneID string) string {
+	return path.Join(milestonesDir, milestoneID+docExt)
 }
 
 func (s *Store) milestonePath(milestoneID string) string {

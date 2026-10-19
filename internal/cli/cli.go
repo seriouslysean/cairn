@@ -253,12 +253,13 @@ var milestoneCommands = map[string]command{
 // aliases are other names for commands.
 var aliases = map[string]string{"--version": "version", "--help": "help", "-h": "help"}
 
-// call is one run of a command: its environment, its parsed arguments, and the warnings it gives.
+// call is one run of a command: its environment, its parsed arguments, what it wrote, and the warnings it gives.
 type call struct {
 	env      Env
 	args     []string            // the positional arguments
 	values   map[string][]string // each value flag's values, in the order given
 	switches map[string]bool     // the switches given
+	wrote    *write              // what a write changed, set once it has
 	warnings []string
 }
 
@@ -311,7 +312,7 @@ func (c *call) dispatch(args []string) (output, error) {
 		if !ok {
 			return output{}, usageError(fmt.Sprintf("unknown milestone subcommand %q", args[0]))
 		}
-		return c.exec(cmd, args[1:])
+		return c.exec(milestoneCommand+" "+args[0], cmd, args[1:])
 	}
 	if alias, ok := aliases[name]; ok {
 		name = alias
@@ -320,10 +321,11 @@ func (c *call) dispatch(args []string) (output, error) {
 	if !ok {
 		return output{}, usageError(fmt.Sprintf("unknown command %q", name))
 	}
-	return c.exec(cmd, args)
+	return c.exec(name, cmd, args)
 }
 
-func (c *call) exec(cmd command, args []string) (output, error) {
+// exec runs cmd, which name names, with args, and then commits what it wrote.
+func (c *call) exec(name string, cmd command, args []string) (output, error) {
 	allowed := append([]string{flagJSON}, cmd.flags...)
 	if cmd.writes {
 		allowed = append(allowed, actorFlags...)
@@ -334,7 +336,11 @@ func (c *call) exec(cmd command, args []string) (output, error) {
 	if !cmd.takes(len(c.args)) {
 		return output{}, usageError(cmd.argsErr)
 	}
-	return cmd.run(c)
+	out, err := cmd.run(c)
+	if err == nil && c.wrote != nil {
+		c.commit(name)
+	}
+	return out, err
 }
 
 // takes reports whether n positional arguments are what cmd takes.

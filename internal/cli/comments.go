@@ -69,6 +69,7 @@ func runComment(c *call) (output, error) {
 	if err := s.SaveComment(issueID, cm); err != nil {
 		return output{}, err
 	}
+	c.wroteIssue(s, issueID)
 	return output{commentResultJSON{Comment: commentData(cm), Warnings: warnings}, cm.ID + "\n"}, nil
 }
 
@@ -112,6 +113,7 @@ func runRetract(c *call) (output, error) {
 	if err := s.SaveComment(issueID, cm); err != nil {
 		return output{}, err
 	}
+	c.wroteIssue(s, issueID)
 	return output{commentData(cm), "retracted " + commentID + "\n"}, nil
 }
 
@@ -130,6 +132,7 @@ func runPurge(c *call) (output, error) {
 		}
 		return output{}, noIssue(err, issueID)
 	}
+	c.wroteIssue(s, issueID)
 	return output{purgeJSON{ID: issueID, Comment: commentID}, "purged " + commentID + "\n"}, nil
 }
 
