@@ -184,14 +184,14 @@ Read-only context:
 - internal/cli/commit_test.go
 - internal/model/model_test.go
 
-## Step 9: default limits
-`ls` and `search` print at most 30 rows unless given `--limit N`, and `--limit 0` prints every row. `--limit` takes a
-whole number of 0 or more, and anything else is a usage error. `ls` keeps its last 30 rows: the newest issues, and
-with `--branches` the branches' rows, which it prints last. `search` keeps its 30 best matches. The cut comes after
-filtering and sorting.
+## Step 10: default limits
+`ls` and `search` print at most 30 rows unless given `--limit N` or `--all`, which step 9 left free to mean every row.
+`--limit` takes a whole number of 1 or more, and anything else is a usage error, as is `--limit` with `--all`. `ls`
+keeps its last 30 rows: the newest issues, and with `--branches` the branches' rows, which it prints last. `search`
+keeps its 30 best matches. The cut comes after filtering and sorting.
 
-When rows are left out, the command warns `30 of 672 shown; --limit N for more, --limit 0 for all`, the same with or
-without a terminal. With `--json` the envelope gains `"total"` on every `ls` and `search`: how many rows there were
+When rows are left out, the command warns `30 of 672 shown; --limit N or --all for more`, the same with or without a
+terminal. With `--json` the envelope gains `"total"` on every `ls` and `search`: how many rows there were
 before the cut, whether or not any were cut. There are no pages: an agent narrows with a filter or a better query.
 `show`, `tags` and `milestones` don't change. The spec's Commands table and `--json` line change with it, and the
 contract is the package comment in `internal/cli/cli.go`.
