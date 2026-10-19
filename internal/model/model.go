@@ -64,6 +64,7 @@ const (
 	keyGitHubRepo      = "github_repo"
 	keyEmbeddingsURL   = "embeddings_url"
 	keyDupeText        = "dupe_text"
+	keyCommit          = "commit"
 )
 
 // Issue is the issue.md file of an issue folder. Required keys: id, title, status, created, updated. The others are
@@ -131,18 +132,19 @@ type Milestone struct {
 	Body   string
 }
 
-// Config is config.yml: frontmatter only, with an empty body. Every key is optional.
+// Config is config.yml: frontmatter only, with an empty body. Every key is optional. Commit turns on commit on write.
 type Config struct {
 	Statuses      []string
 	TagGroups     []string
 	GitHubRepo    string
 	EmbeddingsURL string
 	DupeText      float64
+	Commit        bool
 	Extra         []doc.Field
 }
 
 // DefaultConfig is the config used for absent keys: statuses [backlog, open, in-progress, done], tag groups
-// [severity, effort, area] and dupe_text 0.6, with GitHub sync and embeddings off.
+// [severity, effort, area] and dupe_text 0.6, with GitHub sync, embeddings and commit on write off.
 func DefaultConfig() Config {
 	return Config{
 		Statuses:  []string{"backlog", "open", "in-progress", "done"},
@@ -279,7 +281,7 @@ func (m Milestone) Fields() []doc.Field {
 }
 
 // ParseConfig builds a Config from config.yml's frontmatter, taking DefaultConfig's value for each absent key. It
-// returns an error for a bad number or a scalar where a list belongs.
+// returns an error for a bad number, a commit that is not true or false, or a scalar where a list belongs.
 func ParseConfig(fields []doc.Field) (Config, error) {
 	def := DefaultConfig()
 	r := newReader(fields)
@@ -289,6 +291,7 @@ func ParseConfig(fields []doc.Field) (Config, error) {
 		GitHubRepo:    r.text(keyGitHubRepo),
 		EmbeddingsURL: r.text(keyEmbeddingsURL),
 		DupeText:      r.float(keyDupeText, def.DupeText),
+		Commit:        r.boolean(keyCommit),
 	}
 	if err := r.done(); err != nil {
 		return Config{}, err
@@ -298,8 +301,8 @@ func ParseConfig(fields []doc.Field) (Config, error) {
 }
 
 // Fields returns the config's frontmatter in the order statuses, tag_groups, github_repo, embeddings_url, dupe_text,
-// then Extra. github_repo and embeddings_url are left out when empty. Numbers are written with
-// strconv.FormatFloat(f, 'g', -1, 64).
+// commit, then Extra. github_repo and embeddings_url are left out when empty, and commit when false. Numbers are
+// written with strconv.FormatFloat(f, 'g', -1, 64).
 func (c Config) Fields() []doc.Field {
 	var w writer
 	w.list(keyStatuses, c.Statuses)
@@ -307,5 +310,6 @@ func (c Config) Fields() []doc.Field {
 	w.optText(keyGitHubRepo, c.GitHubRepo)
 	w.optText(keyEmbeddingsURL, c.EmbeddingsURL)
 	w.float(keyDupeText, c.DupeText)
+	w.optTrue(keyCommit, c.Commit)
 	return w.with(c.Extra)
 }
