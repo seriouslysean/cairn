@@ -22,9 +22,11 @@ const DirName = ".cairn"
 // ConfigFile is the config's file in the tracker's folder.
 const ConfigFile = "config.yml"
 
+// IssuesDir is the folder in the tracker's folder that holds one folder per issue.
+const IssuesDir = "issues"
+
 // The other names inside the tracker's folder.
 const (
-	issuesDir     = "issues"
 	milestonesDir = "milestones"
 	issueFile     = "issue.md"
 	ignoreFile    = ".gitignore"
@@ -86,7 +88,7 @@ func Init(dir string) (*Store, error) {
 	if _, err := os.Stat(s.Dir); err == nil {
 		return nil, ErrExists
 	}
-	for _, sub := range []string{issuesDir, milestonesDir} {
+	for _, sub := range []string{IssuesDir, milestonesDir} {
 		if err := os.MkdirAll(filepath.Join(s.Dir, sub), dirPerm); err != nil {
 			return nil, err
 		}
@@ -116,9 +118,7 @@ func (s *Store) Config() (model.Config, error) {
 	return c, nil
 }
 
-// LoadIssue reads issues/<id>/issue.md and every c-*.md file beside it. Comments are sorted by At, then by ID. Other
-// files in the folder, temporary ones included, are ignored. It returns ErrNotFound when the folder or issue.md is
-// missing, and an error when a file's id does not match its folder or file name.
+// LoadIssue reads issues/<id> on disk, as ReadIssue reads a folder. A missing folder is ErrNotFound too.
 func (s *Store) LoadIssue(issueID string) (model.Issue, []model.Comment, error) {
 	if !id.Valid(issueID) {
 		return model.Issue{}, nil, ErrNotFound
@@ -131,17 +131,62 @@ func (s *Store) LoadIssue(issueID string) (model.Issue, []model.Comment, error) 
 	if err != nil {
 		return model.Issue{}, nil, err
 	}
-	issue, err := readIssue(dir, issueID)
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	return ReadIssue(issueID, diskFolder(dir, names))
+}
+
+// Folder is an issue folder, wherever its files are: on disk, or in a git commit.
+type Folder struct {
+	Path  string                            // the folder, as errors name it
+	Names []string                          // the files in it, not its subfolders
+	Read  func(name string) ([]byte, error) // a missing file is fs.ErrNotExist
+}
+
+// diskFolder is the folder dir on disk, holding the files names.
+func diskFolder(dir string, names []string) Folder {
+	return Folder{Path: dir, Names: names, Read: func(name string) ([]byte, error) {
+		return os.ReadFile(filepath.Join(dir, name))
+	}}
+}
+
+// path is the file name in f, as errors name it.
+func (f Folder) path(name string) string {
+	return filepath.Join(f.Path, name)
+}
+
+// parse reads and parses the file name in f. A read error is f.Read's; a parse error is a fileError.
+func (f Folder) parse(name string) ([]doc.Field, []byte, error) {
+	data, err := f.Read(name)
+	if err != nil {
+		return nil, nil, err
+	}
+	return parseDoc(f.path(name), data)
+}
+
+// ReadIssue reads the issue issueID from its folder f: issue.md and every c-*.md file beside it. Comments are sorted
+// by At, then by ID. Other files, temporary ones included, are ignored. It returns ErrNotFound when the id is not
+// valid or issue.md is missing, and an error when a file does not parse or its id does not match its folder or file
+// name.
+func ReadIssue(issueID string, f Folder) (model.Issue, []model.Comment, error) {
+	if !id.Valid(issueID) {
+		return model.Issue{}, nil, ErrNotFound
+	}
+	issue, err := readIssue(issueID, f)
 	if err != nil {
 		return model.Issue{}, nil, err
 	}
 	var comments []model.Comment
-	for _, e := range entries {
-		commentID, ok := commentFileID(e)
+	for _, name := range f.Names {
+		commentID, ok := commentFileID(name)
 		if !ok {
 			continue
 		}
-		c, err := readComment(dir, commentID)
+		c, err := readComment(commentID, f)
 		if err != nil {
 			return model.Issue{}, nil, err
 		}
@@ -186,7 +231,8 @@ func (s *Store) ListIssues() ([]model.Issue, error) {
 	}
 	var issues []model.Issue
 	for _, issueID := range issueIDs {
-		issue, err := readIssue(s.issueDir(issueID), issueID)
+		// Only issue.md is read, so the folder's names are not needed.
+		issue, err := readIssue(issueID, diskFolder(s.issueDir(issueID), nil))
 		if errors.Is(err, ErrNotFound) {
 			continue
 		}
@@ -230,7 +276,7 @@ func (s *Store) NewCommentID(issueID string, r io.Reader) (string, error) {
 	}
 	taken := map[string]bool{}
 	for _, e := range entries {
-		if commentID, ok := commentFileID(e); ok {
+		if commentID, ok := commentFileID(e.Name()); ok && !e.IsDir() {
 			taken[commentID] = true
 		}
 	}
@@ -341,7 +387,7 @@ func (s *Store) SaveMilestone(m model.Milestone) error {
 }
 
 func (s *Store) issueDir(issueID string) string {
-	return filepath.Join(s.Dir, issuesDir, issueID)
+	return filepath.Join(s.Dir, IssuesDir, issueID)
 }
 
 func (s *Store) milestonePath(milestoneID string) string {
@@ -360,7 +406,7 @@ func (s *Store) hasIssue(issueID string) bool {
 // issueIDs returns the names of the folders in issues/ that are valid issue ids, whether or not they hold issue.md.
 // A missing issues folder holds none.
 func (s *Store) issueIDs() ([]string, error) {
-	entries, err := os.ReadDir(filepath.Join(s.Dir, issuesDir))
+	entries, err := os.ReadDir(filepath.Join(s.Dir, IssuesDir))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -377,15 +423,14 @@ func (s *Store) issueIDs() ([]string, error) {
 }
 
 // commentFileID returns the comment id that a file in an issue folder is named for, if it is a comment file.
-func commentFileID(e fs.DirEntry) (string, bool) {
-	commentID, ok := strings.CutSuffix(e.Name(), docExt)
-	return commentID, ok && !e.IsDir() && id.ValidComment(commentID)
+func commentFileID(name string) (string, bool) {
+	commentID, ok := strings.CutSuffix(name, docExt)
+	return commentID, ok && id.ValidComment(commentID)
 }
 
-// readIssue reads dir/issue.md for the issue issueID. It returns ErrNotFound when the file is missing.
-func readIssue(dir, issueID string) (model.Issue, error) {
-	path := filepath.Join(dir, issueFile)
-	fields, body, err := readDoc(path)
+// readIssue reads issue.md in f for the issue issueID. It returns ErrNotFound when the file is missing.
+func readIssue(issueID string, f Folder) (model.Issue, error) {
+	fields, body, err := f.parse(issueFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		return model.Issue{}, ErrNotFound
 	}
@@ -394,38 +439,44 @@ func readIssue(dir, issueID string) (model.Issue, error) {
 	}
 	issue, err := model.ParseIssue(fields, body)
 	if err != nil {
-		return model.Issue{}, fileError(path, err)
+		return model.Issue{}, fileError(f.path(issueFile), err)
 	}
 	if issue.ID != issueID {
-		return model.Issue{}, fileError(path, fmt.Errorf("issue id %q does not match the folder", issue.ID))
+		err := fmt.Errorf("issue id %q does not match the folder", issue.ID)
+		return model.Issue{}, fileError(f.path(issueFile), err)
 	}
 	return issue, nil
 }
 
-// readComment reads dir/<commentID>.md.
-func readComment(dir, commentID string) (model.Comment, error) {
-	path := filepath.Join(dir, commentID+docExt)
-	fields, body, err := readDoc(path)
+// readComment reads <commentID>.md in f.
+func readComment(commentID string, f Folder) (model.Comment, error) {
+	name := commentID + docExt
+	fields, body, err := f.parse(name)
 	if err != nil {
 		return model.Comment{}, err
 	}
 	c, err := model.ParseComment(fields, body)
 	if err != nil {
-		return model.Comment{}, fileError(path, err)
+		return model.Comment{}, fileError(f.path(name), err)
 	}
 	if c.ID != commentID {
-		return model.Comment{}, fileError(path, fmt.Errorf("comment id %q does not match the file name", c.ID))
+		err := fmt.Errorf("comment id %q does not match the file name", c.ID)
+		return model.Comment{}, fileError(f.path(name), err)
 	}
 	return c, nil
 }
 
-// readDoc reads and parses one file. A read error is os.ReadFile's, which names the file; a parse error is a
-// fileError.
+// readDoc reads and parses one file on disk. A read error is os.ReadFile's, which names the file.
 func readDoc(path string) ([]doc.Field, []byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, err
 	}
+	return parseDoc(path, data)
+}
+
+// parseDoc parses data, the contents of the file at path. A parse error is a fileError.
+func parseDoc(path string, data []byte) ([]doc.Field, []byte, error) {
 	fields, body, err := doc.Parse(data)
 	if err != nil {
 		return nil, nil, fileError(path, err)
