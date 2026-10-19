@@ -184,6 +184,32 @@ Read-only context:
 - internal/cli/commit_test.go
 - internal/model/model_test.go
 
+## Step 9: clearer names
+Three names said less than they meant, so they change, with no alias for the old ones:
+- `show --all` is `show --retracted`: it adds the retracted comments. That leaves `--all` free for step 10 to mean
+  every row.
+- The config key `dupe_text` is `retracted_match`: the overlap score at which a new comment warns that it matches a
+  retracted one. A config that still has `dupe_text` keeps the line as an unknown key, and `retracted_match` takes its
+  default.
+- `comment --json` lists those matches as `data.retracted_matches`, not `data.warnings`, so the name is no longer
+  shared with the envelope's `warnings`.
+
+The spec said `ls` leaves retracted comments out, but `ls` never prints comments, so that line now names `show` only.
+The contract is the package comment in `internal/cli/cli.go`.
+
+Drafter edits:
+- internal/cli/cli.go
+- internal/cli/comments.go
+- internal/cli/help.go
+- internal/cli/issues.go
+- internal/cli/json.go
+- internal/model/model.go
+
+Read-only context:
+- docs/spec.md
+- internal/cli/comment_test.go
+- internal/model/model_test.go
+
 ## Later, in this order
 1. `pull`, one way: GitHub issues and their comments become Cairn issues and comments.
 2. `push`.
