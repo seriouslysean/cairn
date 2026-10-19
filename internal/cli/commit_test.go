@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -326,5 +327,69 @@ func TestFailedWriteCommitsNothing(t *testing.T) {
 	tr.wantError(4, "not_found", "retract", a, "c-zzzz", "--reason", "wrong")
 	if tr.headCommit() != before {
 		t.Fatal("a failed write committed")
+	}
+}
+
+// With --json, the envelope holds each warning too, as "warnings": the messages stderr gets, without their prefix. A
+// command that gives no warnings has no "warnings" key.
+func TestWarningsInJSON(t *testing.T) {
+	envelope := func(t *testing.T, out string) (warnings []string, keys []string) {
+		t.Helper()
+		var top map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(out), &top); err != nil {
+			t.Fatalf("stdout %q: %v", out, err)
+		}
+		for k := range top {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		if w, ok := top["warnings"]; ok {
+			if err := json.Unmarshal(w, &warnings); err != nil {
+				t.Fatalf("warnings %s: %v", w, err)
+			}
+		}
+		return warnings, keys
+	}
+	messages := func(t *testing.T, errOut string) []string {
+		t.Helper()
+		var m []string
+		for _, l := range warningLines(t, errOut) {
+			m = append(m, strings.TrimPrefix(l, "cairn: warning: "))
+		}
+		return m
+	}
+
+	tr := commitTracker(t, "")
+	lock := filepath.Join(tr.dir, ".git", "index.lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := tr.run("new", "a", "--json")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errOut)
+	}
+	got, _ := envelope(t, out)
+	if want := messages(t, errOut); len(got) != 1 || !strings.HasPrefix(got[0], "not committed: ") ||
+		!reflect.DeepEqual(got, want) {
+		t.Fatalf("warnings %q, stderr %q", got, errOut)
+	}
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut = tr.run("new", "b", "--json")
+	if _, keys := envelope(t, out); code != 0 || errOut != "" || !reflect.DeepEqual(keys, []string{"data", "ok"}) {
+		t.Fatalf("no warnings: exit %d, keys %q, stderr %q", code, keys, errOut)
+	}
+
+	// Not only commit on write: a comment that matches a retracted one names it there too.
+	tr = newTracker(t)
+	tr.issue("new", "a")
+	tr.comment("comment", "0123", "--kind", "evidence", "--source", "log.txt", "a b c d") // c-4567
+	tr.retract("0123", "c-4567", "--reason", "old log")
+	code, out, errOut = tr.run("comment", "0123", "--kind", "result", "a b c e", "--json")
+	got, _ = envelope(t, out)
+	if want := messages(t, errOut); code != 0 || len(got) != 1 || !strings.Contains(got[0], "c-4567") ||
+		!reflect.DeepEqual(got, want) {
+		t.Fatalf("exit %d, warnings %q, stderr %q", code, got, errOut)
 	}
 }

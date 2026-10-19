@@ -13,7 +13,8 @@
 // {"ok": false, "error": {"code": "…", "message": "…"}} on stdout, plus the message on one line of stderr. Without
 // --json, success prints text on stdout and failure prints "cairn: <message>" on one line of stderr and nothing on
 // stdout. A command that succeeds with warnings still exits 0, and prints each warning in both modes as one line
-// "cairn: warning: <message>" on stderr. A command that fails prints no warnings.
+// "cairn: warning: <message>" on stderr. With --json, its envelope also has "warnings": [<message>, …], in the same
+// order, and without warnings it has no "warnings" key. A command that fails prints no warnings.
 //
 // Exit codes and error codes:
 //   - 0: ok.
