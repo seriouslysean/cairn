@@ -36,8 +36,9 @@
 // else is staged or committed, and an earlier change to the same issue that was never committed goes in too. The
 // message is "chore(cairn): <command> <id> (by <actor>)", where command is new, edit, rm, comment, retract, purge,
 // milestone new or milestone edit, and id is the issue's or the milestone's. git's own config names the author, and
-// the repository's hooks run. A git step that fails because another writer is in the way (git's error names a lock
-// file such as index.lock, or HEAD moved while the step ran) is tried again, for about a second in all. When git still
+// the repository's hooks run. A git step that fails because another writer is in the way is tried again, for about a
+// second in all: git exits 128, as it does for a fatal error, and either its error names a lock file such as
+// index.lock or HEAD moved while the step ran. A hook that refuses makes git exit 1, so it runs once. When git still
 // fails (no git, no repository, a lock held longer, a hook), or config.yml cannot be read after a write that did not
 // need it, the write stands and the command still succeeds, with the warning "not committed: <the error>". A write
 // that fails commits nothing, and init never commits.

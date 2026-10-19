@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -279,6 +280,35 @@ func TestCommitFailureKeepsTheWrite(t *testing.T) {
 	}
 	if st := tr.status(); st != nil {
 		t.Fatalf("left uncommitted: %q", st)
+	}
+}
+
+// A hook that refuses the commit is not another writer, even when its message names a lock file such as a package
+// manager's: it runs once, and the write stands with the warning.
+func TestCommitHookRunsOnce(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the hook is a shell script")
+	}
+	tr := commitTracker(t, "")
+	runs := filepath.Join(t.TempDir(), "runs")
+	hook := "#!/bin/sh\necho run >> '" + runs + "'\necho 'yarn.lock is out of date' >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(tr.dir, ".git", "hooks", "pre-commit"), []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	before := tr.headCommit()
+	code, _, errOut := tr.run("new", "a")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errOut)
+	}
+	if lines := warningLines(t, errOut); len(lines) != 1 ||
+		!strings.HasPrefix(lines[0], "cairn: warning: not committed: ") {
+		t.Fatalf("stderr %q", errOut)
+	}
+	if got, err := os.ReadFile(runs); err != nil || string(got) != "run\n" {
+		t.Fatalf("hook runs: %q, %v", got, err)
+	}
+	if tr.headCommit() != before {
+		t.Fatal("committed past the hook")
 	}
 }
 
