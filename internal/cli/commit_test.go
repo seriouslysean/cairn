@@ -1,14 +1,19 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // writeConfig replaces the tracker's config.yml with text, and leaves the change uncommitted.
@@ -170,8 +175,64 @@ func TestCommitTakesOnlyItsPaths(t *testing.T) {
 	}
 }
 
-// When git fails, here because another writer holds the index lock, the write stands and the command succeeds with a
-// warning, in both output modes. The next write to the same issue commits what was left.
+// A lock another writer releases soon is waited for: the write commits, with no warning.
+func TestCommitWaitsForALock(t *testing.T) {
+	tr := commitTracker(t, "")
+	lock := filepath.Join(tr.dir, ".git", "index.lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	released := make(chan error, 1)
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		released <- os.Remove(lock)
+	}()
+	a := tr.write("new", "a")
+	if err := <-released; err != nil {
+		t.Fatal(err)
+	}
+	if _, subject, _ := tr.head(); subject != "chore(cairn): new "+a+" (by alice)" {
+		t.Fatalf("HEAD: %q", subject)
+	}
+}
+
+// Writers that start at the same moment take turns with the index lock, and every write is committed.
+func TestCommitConcurrentWrites(t *testing.T) {
+	tr := commitTracker(t, "")
+	before := strings.TrimSpace(tr.git("rev-list", "--count", "HEAD"))
+	const writers = 3
+	failed := make(chan string, writers)
+	var wg sync.WaitGroup
+	for n := range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var out, errOut bytes.Buffer
+			env := Env{Dir: tr.dir, Stdout: &out, Stderr: &errOut, Getenv: func(k string) string { return tr.env[k] }}
+			if code := Run([]string{"new", fmt.Sprintf("Writer %d", n)}, env); code != 0 || errOut.Len() > 0 {
+				failed <- fmt.Sprintf("writer %d: exit %d, stderr %q", n, code, errOut.String())
+			}
+		}()
+	}
+	wg.Wait()
+	close(failed)
+	for f := range failed {
+		t.Error(f)
+	}
+	if st := tr.status(); st != nil {
+		t.Fatalf("left uncommitted: %q", st)
+	}
+	n, err := strconv.Atoi(before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(tr.git("rev-list", "--count", "HEAD")); got != strconv.Itoa(n+writers) {
+		t.Fatalf("%s commits, want %d", got, n+writers)
+	}
+}
+
+// When git fails, here because another writer holds the index lock past the wait, the write stands and the command
+// succeeds with a warning, in both output modes. The next write to the same issue commits what was left.
 func TestCommitFailureKeepsTheWrite(t *testing.T) {
 	tr := commitTracker(t, "")
 	a := tr.write("new", "a")
