@@ -13,7 +13,8 @@
 // {"ok": false, "error": {"code": "…", "message": "…"}} on stdout, plus the message on one line of stderr. Without
 // --json, success prints text on stdout and failure prints "cairn: <message>" on one line of stderr and nothing on
 // stdout. A command that succeeds with warnings still exits 0, and prints each warning in both modes as one line
-// "cairn: warning: <message>" on stderr. A command that fails prints no warnings.
+// "cairn: warning: <message>" on stderr. With --json, its envelope also has "warnings": [<message>, …], in the same
+// order, and without warnings it has no "warnings" key. A command that fails prints no warnings.
 //
 // Exit codes and error codes:
 //   - 0: ok.
@@ -29,6 +30,18 @@
 // CAIRN_ACTOR environment variable. They also take --persona and --model. new records them on the issue as by, persona
 // and model, once: no later write changes them, and an issue without them keeps "". comment records them the same way
 // on the comment, and retract records the actor as retracted_by; the other writes check the actor but store it nowhere.
+//
+// Commit on write: when the config's commit is true, a write that succeeds commits what it changed, as it is on disk:
+// its issue's folder, issues/<id>, or for milestone new and milestone edit the milestone's file, milestones/<id>.md.
+// git runs in the tracker's folder, first "git add -A -- <path>", then "git commit -m <message> -- <path>", so nothing
+// else is staged or committed, and an earlier change to the same issue that was never committed goes in too. The
+// message is "chore(cairn): <command> <id> (by <actor>)", where command is new, edit, rm, comment, retract, purge,
+// milestone new or milestone edit, and id is the issue's or the milestone's. git's own config names the author, and
+// the repository's hooks run. Each git step runs once, so two writes at the same moment can collide on git's locks.
+// When git fails (no git, no repository, another writer's lock, a hook), or config.yml cannot be read after a write
+// that did not need it, the write stands and the command still succeeds, with the warning
+// "not committed: <the error>". But when git status then shows nothing left to commit at the path, another writer
+// committed the change first, and there is no warning. A write that fails commits nothing, and init never commits.
 //
 // Commands:
 //   - init: makes .cairn in Env.Dir (it does not look upward). Text: "initialized <the .cairn path>\n". Data:
@@ -50,9 +63,10 @@
 //   - ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]: lists issues in store order. Every filter
 //     given must match; --due-before keeps issues with a due date before d. Text: one "<id>\t<status>\t<title>\n"
 //     line per issue. Data: a list of issues without "body" (an empty list, never null).
-//   - --branches, on ls and show, adds what active branches committed, as branchIssues reads it. Without it Cairn
-//     never runs git. With it, failing to read git (no git, no repository, no default branch) is an "error", and a
-//     branch file that cannot be read or does not parse is a warning that names the branch and the issue.
+//   - --branches, on ls and show, adds what active branches committed, as branchIssues reads it. Without it, and
+//     without commit on write, Cairn never runs git. With it, failing to read git (no git, no repository, no default
+//     branch) is an "error", and a branch file that cannot be read or does not parse is a warning that names the
+//     branch and the issue.
 //   - ls --branches: the checkout's rows, then the branch versions, all through the same filters. Text: a branch
 //     version's line is "<id>\t<status>\t<title>\t<branch>\n". Data: every item also has "branch" ("" for the
 //     checkout).
@@ -242,12 +256,13 @@ var milestoneCommands = map[string]command{
 // aliases are other names for commands.
 var aliases = map[string]string{"--version": "version", "--help": "help", "-h": "help"}
 
-// call is one run of a command: its environment, its parsed arguments, and the warnings it gives.
+// call is one run of a command: its environment, its parsed arguments, what it wrote, and the warnings it gives.
 type call struct {
 	env      Env
 	args     []string            // the positional arguments
 	values   map[string][]string // each value flag's values, in the order given
 	switches map[string]bool     // the switches given
+	wrote    *write              // what a write changed, set once it has
 	warnings []string
 }
 
@@ -300,7 +315,7 @@ func (c *call) dispatch(args []string) (output, error) {
 		if !ok {
 			return output{}, usageError(fmt.Sprintf("unknown milestone subcommand %q", args[0]))
 		}
-		return c.exec(cmd, args[1:])
+		return c.exec(milestoneCommand+" "+args[0], cmd, args[1:])
 	}
 	if alias, ok := aliases[name]; ok {
 		name = alias
@@ -309,10 +324,11 @@ func (c *call) dispatch(args []string) (output, error) {
 	if !ok {
 		return output{}, usageError(fmt.Sprintf("unknown command %q", name))
 	}
-	return c.exec(cmd, args)
+	return c.exec(name, cmd, args)
 }
 
-func (c *call) exec(cmd command, args []string) (output, error) {
+// exec runs cmd, which name names, with args, and then commits what it wrote.
+func (c *call) exec(name string, cmd command, args []string) (output, error) {
 	allowed := append([]string{flagJSON}, cmd.flags...)
 	if cmd.writes {
 		allowed = append(allowed, actorFlags...)
@@ -323,7 +339,11 @@ func (c *call) exec(cmd command, args []string) (output, error) {
 	if !cmd.takes(len(c.args)) {
 		return output{}, usageError(cmd.argsErr)
 	}
-	return cmd.run(c)
+	out, err := cmd.run(c)
+	if err == nil && c.wrote != nil {
+		c.commit(name)
+	}
+	return out, err
 }
 
 // takes reports whether n positional arguments are what cmd takes.
@@ -408,7 +428,7 @@ func (c *call) warn(msg string) {
 // print writes out to stdout: its data in the success envelope with --json, else its text.
 func (c *call) print(out output, jsonOn bool) error {
 	if jsonOn {
-		return json.NewEncoder(c.env.Stdout).Encode(successJSON{OK: true, Data: out.data})
+		return json.NewEncoder(c.env.Stdout).Encode(successJSON{OK: true, Data: out.data, Warnings: c.warnings})
 	}
 	_, err := io.WriteString(c.env.Stdout, out.text)
 	return err

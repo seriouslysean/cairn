@@ -8,7 +8,7 @@ reads and writes them. An agent can do everything without a person: no prompts, 
 
 ```
 .cairn/
-  config.yml               statuses, tag groups, GitHub repo, embeddings URL
+  config.yml               statuses, tag groups, GitHub repo, embeddings URL, commit on write
   issues/7f3k/issue.md     one folder per issue
   issues/7f3k/c-x9k2.md    one file per comment
   milestones/v0.4.md       one file per milestone
@@ -79,10 +79,11 @@ tag_groups: [severity, effort, area]
 github_repo: owner/name
 embeddings_url: http://127.0.0.1:8080/v1/embeddings
 dupe_text: 0.6
+commit: false
 ---
 ```
 Every key is optional. Shown above with the defaults, except that `github_repo` and `embeddings_url` are off when
-absent.
+absent. `commit` is `true` or `false`.
 
 ## IDs
 - Issues: 4 lowercase characters from Crockford's base32 alphabet (`0-9a-z` without `i l o u`), checked against existing
@@ -112,8 +113,9 @@ absent.
 - Every write takes `--as <actor>` and, optionally, `--persona <p>` and `--model <m>`. The actor can also come from the
   `CAIRN_ACTOR` environment variable. `new` and `comment` record all three as `by`, `persona` and `model`; `retract`
   records the actor as `retracted_by`.
-- Every command takes `--json`. On success it prints `{"ok": true, "data": …}`. On failure it prints
-  `{"ok": false, "error": {"code": "…", "message": "…"}}` on stdout, and a one-line message on stderr.
+- Every command takes `--json`. On success it prints `{"ok": true, "data": …}`, plus `"warnings": ["…"]` when it
+  gave warnings, the same ones stderr gets. On failure it prints `{"ok": false, "error": {"code": "…", "message": "…"}}`
+  on stdout, and a one-line message on stderr.
 - Exit codes:
   - 0: ok;
   - 1: error;
@@ -152,7 +154,7 @@ An agent with only the binary learns these from `cairn help`:
 - Cairn does not look for duplicates. Run `search` before `new`.
 
 ## Branches
-- By default, commands read the current checkout only, and never run git.
+- By default, commands read the current checkout only. Only `--branches` and commit on write (below) run git.
 - `ls --branches` and `show --branches` add what active branches committed. The default branch is the one
   `origin/HEAD` names, else `main`, else `master`. An active branch is a local branch, in any worktree, that:
   - is not the default branch or the branch checked out here;
@@ -163,6 +165,20 @@ An agent with only the binary learns these from `cairn help`:
   it. Uncommitted work, here or in another worktree, is not seen. An issue the branch removed is left out.
 - `ls` lists the checkout's issues, then each branch's, marked with the branch name. `show` prints the checkout's
   version, then each branch's under a `=== branch <name> ===` line, so an issue changed on two branches shows both.
+
+## Commit on write (optional)
+- With `commit: true`, each write that succeeds commits what it changed: the issue's folder, or for `milestone new`
+  and `milestone edit` the milestone's file, as it is on disk. Nothing else is staged or committed. `init` commits
+  nothing.
+- The message is `chore(cairn): <command> <id> (by <actor>)`, for example `chore(cairn): comment 7f3k (by alice)`.
+  The author is whoever git's config names, and the repository's hooks run.
+- A commit is tried once. When it fails (no git, no repository, another writer's lock, a hook), the write stands and
+  the command succeeds with a warning, unless another writer has already committed the change. The next write to the
+  same issue commits what was left.
+- Two writes at the same moment can collide on git's locks, and then one of them is left uncommitted. To commit every
+  write, run writes one at a time.
+- It commits on the branch checked out, so it suits a tracker kept in a repository of its own. In a repository that
+  works through pull requests, leave it off.
 
 ## GitHub sync (optional, through the `gh` CLI)
 - `pull`:

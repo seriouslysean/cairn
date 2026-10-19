@@ -81,6 +81,7 @@ func runNew(c *call) (output, error) {
 	if err := s.SaveIssue(i); err != nil {
 		return output{}, err
 	}
+	c.wroteIssue(s, i.ID)
 	return output{issueData(i), i.ID + "\n"}, nil
 }
 
@@ -143,6 +144,7 @@ func runEdit(c *call) (output, error) {
 	if err := s.SaveIssue(i); err != nil {
 		return output{}, err
 	}
+	c.wroteIssue(s, i.ID)
 	return output{issueData(i), i.ID + "\n"}, nil
 }
 
@@ -158,6 +160,7 @@ func runRm(c *call) (output, error) {
 	if err := s.RemoveIssue(issueID); err != nil {
 		return output{}, noIssue(err, issueID)
 	}
+	c.wroteIssue(s, issueID)
 	return output{rmJSON{ID: issueID}, "removed " + issueID + "\n"}, nil
 }
 

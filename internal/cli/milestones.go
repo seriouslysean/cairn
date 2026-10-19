@@ -98,6 +98,7 @@ func runMilestoneNew(c *call) (output, error) {
 	if err := s.SaveMilestone(m); err != nil {
 		return output{}, err
 	}
+	c.wroteMilestone(s, m.ID)
 	return output{milestoneData(m), m.ID + "\n"}, nil
 }
 
@@ -147,5 +148,6 @@ func runMilestoneEdit(c *call) (output, error) {
 	if err := s.SaveMilestone(m); err != nil {
 		return output{}, err
 	}
+	c.wroteMilestone(s, m.ID)
 	return output{milestoneData(m), m.ID + "\n"}, nil
 }

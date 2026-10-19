@@ -97,6 +97,25 @@ func (r *reader) number(key string) int {
 	return n
 }
 
+// How a boolean is written.
+const (
+	textTrue  = "true"
+	textFalse = "false"
+)
+
+// boolean returns the key's value, which must be textTrue or textFalse when the key is present, or false when it is
+// absent.
+func (r *reader) boolean(key string) bool {
+	f, ok := r.field(key, false)
+	if !ok {
+		return false
+	}
+	if f.Value != textTrue && f.Value != textFalse {
+		r.fail(fmt.Errorf("model: bad %s %q: want %s or %s", key, f.Value, textTrue, textFalse))
+	}
+	return f.Value == textTrue
+}
+
 // float returns the key's number, or def when the key is absent.
 func (r *reader) float(key string, def float64) float64 {
 	f, ok := r.field(key, false)
@@ -171,6 +190,13 @@ func (w *writer) optTime(key string, t time.Time) {
 func (w *writer) optNumber(key string, n int) {
 	if n != 0 {
 		w.text(key, strconv.Itoa(n))
+	}
+}
+
+// optTrue writes textTrue when v is true, and nothing when it is false.
+func (w *writer) optTrue(key string, v bool) {
+	if v {
+		w.text(key, textTrue)
 	}
 }
 

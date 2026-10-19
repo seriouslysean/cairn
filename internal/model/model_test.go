@@ -318,6 +318,34 @@ func TestConfigOverrides(t *testing.T) {
 	}
 }
 
+// commit is true or false, and off when absent. Fields writes it only when it is on, so init's config.yml stays as
+// it was.
+func TestConfigCommit(t *testing.T) {
+	for src, want := range map[string]bool{"---\ncommit: true\n---\n": true, "---\ncommit: false\n---\n": false} {
+		f, _ := split(t, src)
+		c, err := ParseConfig(f)
+		if err != nil {
+			t.Fatalf("%q: %v", src, err)
+		}
+		if c.Commit != want || len(c.Extra) != 0 {
+			t.Fatalf("%q: got %+v", src, c)
+		}
+	}
+	on := DefaultConfig()
+	on.Commit = true
+	wantFile := "---\nstatuses: [backlog, open, in-progress, done]\ntag_groups: [severity, effort, area]\n" +
+		"dupe_text: 0.6\ncommit: true\n---\n"
+	if out := join(t, on.Fields(), ""); out != wantFile {
+		t.Fatalf("got\n%s", out)
+	}
+	for _, bad := range []string{"yes", "1", "True", "on", `""`, "[true]"} {
+		f, _ := split(t, "---\ncommit: "+bad+"\n---\n")
+		if _, err := ParseConfig(f); err == nil {
+			t.Errorf("commit: %s: want an error", bad)
+		}
+	}
+}
+
 // Every key is either a scalar or a list; the wrong shape is an error, never a silently dropped value.
 func TestParseRejectsWrongShape(t *testing.T) {
 	for _, c := range []struct{ old, new string }{

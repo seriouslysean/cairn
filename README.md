@@ -42,8 +42,9 @@ This repo tracks issues with Cairn. Run `cairn help` before using it, and set `C
 ```
 
 `cairn help` prints every command's usage and the rules. Add `--json` to any command: success prints
-`{"ok": true, "data": …}`, failure prints `{"ok": false, "error": {"code": "…", "message": "…"}}`, and the exit codes
-are 0 ok, 1 error, 2 usage, 4 not found. [docs/spec.md](docs/spec.md) has the rest.
+`{"ok": true, "data": …}`, plus `"warnings"` when there are any, failure prints
+`{"ok": false, "error": {"code": "…", "message": "…"}}`, and the exit codes are 0 ok, 1 error, 2 usage, 4 not found.
+[docs/spec.md](docs/spec.md) has the rest.
 
 ## Requests
 
