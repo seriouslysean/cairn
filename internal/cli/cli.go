@@ -97,8 +97,9 @@
 // A milestone in data is {"id", "title", "status", "due"}, every key always present ("" when due is not set).
 //
 // An issue in data is {"id", "title", "status", "tags", "milestone", "due", "by", "persona", "model", "created",
-// "updated", "github", "body"}, every key always present: tags is a list (never null), times are RFC 3339 UTC strings, github is a number (0 when
-// not synced), and empty text is "". Only show adds "comments".
+// "updated", "github", "body"}, every key always present: tags is a list (never null), times are strings in
+// model.TimeLayout (RFC 3339 UTC with three fraction digits, in text output too), github is a number (0 when not
+// synced), and empty text is "". Only show adds "comments".
 //
 // A comment in data is {"id", "kind", "by", "persona", "model", "at", "source", "body", "retracted"}, every key always
 // present: retracted is null for an active comment, and otherwise {"by", "at", "reason", "disproved_by"}, with ""
@@ -711,7 +712,7 @@ func runShow(env Env, args []string) int {
 		}
 	}
 	fmt.Fprintf(env.Stdout, "created: %s\nupdated: %s\n",
-		issue.Created.Format(time.RFC3339Nano), issue.Updated.Format(time.RFC3339Nano))
+		model.FormatTime(issue.Created), model.FormatTime(issue.Updated))
 	if issue.Body != "" {
 		fmt.Fprintf(env.Stdout, "\n%s", issue.Body)
 	}
@@ -728,13 +729,13 @@ func runShow(env Env, args []string) int {
 		if c.Model != "" {
 			fmt.Fprintf(env.Stdout, "model: %s\n", c.Model)
 		}
-		fmt.Fprintf(env.Stdout, "at: %s\n", c.At.Format(time.RFC3339Nano))
+		fmt.Fprintf(env.Stdout, "at: %s\n", model.FormatTime(c.At))
 		if c.Source != "" {
 			fmt.Fprintf(env.Stdout, "source: %s\n", c.Source)
 		}
 		if c.RetractedBy != "" {
 			fmt.Fprintf(env.Stdout, "retracted_by: %s\n", c.RetractedBy)
-			fmt.Fprintf(env.Stdout, "retracted_at: %s\n", c.RetractedAt.Format(time.RFC3339Nano))
+			fmt.Fprintf(env.Stdout, "retracted_at: %s\n", model.FormatTime(c.RetractedAt))
 			fmt.Fprintf(env.Stdout, "retracted_reason: %s\n", c.RetractedReason)
 			if c.DisprovedBy != "" {
 				fmt.Fprintf(env.Stdout, "disproved_by: %s\n", c.DisprovedBy)
@@ -1580,8 +1581,8 @@ func issueToJSONMap(i model.Issue, withBody bool) map[string]any {
 		"by":        i.By,
 		"persona":   i.Persona,
 		"model":     i.Model,
-		"created":   i.Created.Format(time.RFC3339Nano),
-		"updated":   i.Updated.Format(time.RFC3339Nano),
+		"created":   model.FormatTime(i.Created),
+		"updated":   model.FormatTime(i.Updated),
 		"github":    i.GitHub,
 	}
 	if withBody {
@@ -1597,14 +1598,14 @@ func commentToJSON(c model.Comment) map[string]any {
 		"by":      c.By,
 		"persona": c.Persona,
 		"model":   c.Model,
-		"at":      c.At.Format(time.RFC3339Nano),
+		"at":      model.FormatTime(c.At),
 		"source":  c.Source,
 		"body":    c.Body,
 	}
 	if c.RetractedBy != "" {
 		m["retracted"] = map[string]any{
 			"by":           c.RetractedBy,
-			"at":           c.RetractedAt.Format(time.RFC3339Nano),
+			"at":           model.FormatTime(c.RetractedAt),
 			"reason":       c.RetractedReason,
 			"disproved_by": c.DisprovedBy,
 		}
