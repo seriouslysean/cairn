@@ -184,6 +184,34 @@ Read-only context:
 - internal/cli/commit_test.go
 - internal/model/model_test.go
 
+## Step 9: default limits
+`ls` and `search` print at most 30 rows unless given `--limit N`, and `--limit 0` prints every row. `--limit` takes a
+whole number of 0 or more, and anything else is a usage error. `ls` keeps its last 30 rows: the newest issues, and
+with `--branches` the branches' rows, which it prints last. `search` keeps its 30 best matches. The cut comes after
+filtering and sorting.
+
+When rows are left out, the command warns `30 of 672 shown; --limit N for more, --limit 0 for all`, the same with or
+without a terminal. With `--json` the envelope gains `"total"` on every `ls` and `search`: how many rows there were
+before the cut, whether or not any were cut. There are no pages: an agent narrows with a filter or a better query.
+`show`, `tags` and `milestones` don't change. The spec's Commands table and `--json` line change with it, and the
+contract is the package comment in `internal/cli/cli.go`.
+
+It comes before `pull`, which brings in issues by the hundred. Reading isn't the problem: at 10,000 issues `ls` takes
+under 0.4 s and `search` about 1 s. Output is: there, `ls --json` prints 2.7 MB, and a tracker of 672 issues already
+prints 195 KB.
+
+Drafter edits:
+- internal/cli/cli.go
+- internal/cli/help.go
+- internal/cli/json.go
+- internal/cli/lists.go
+
+Read-only context:
+- docs/spec.md
+- internal/cli/branches.go
+- internal/cli/lists_test.go
+- internal/store/store.go
+
 ## Later, in this order
 1. `pull`, one way: GitHub issues and their comments become Cairn issues and comments.
 2. `push`.
