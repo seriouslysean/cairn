@@ -67,6 +67,18 @@ type showJSON struct {
 	Comments []commentJSON `json:"comments"`
 }
 
+// lsJSON is a row of ls. Branch is set only with --branches, to "" for the checkout's own rows.
+type lsJSON struct {
+	issueSummaryJSON
+	Branch *string `json:"branch,omitempty"`
+}
+
+// showBranchJSON is one version of an issue that show --branches prints. Branch is "" for the checkout's version.
+type showBranchJSON struct {
+	showJSON
+	Branch string `json:"branch"`
+}
+
 type searchJSON struct {
 	issueSummaryJSON
 	Matches int `json:"matches"`

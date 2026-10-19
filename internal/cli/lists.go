@@ -27,18 +27,38 @@ func runLs(c *call) (output, error) {
 			return output{}, err
 		}
 	}
+	rows := make([]branchVersion, len(issues))
+	for n, i := range issues {
+		rows[n] = branchVersion{issue: i}
+	}
+	withBranches := c.switches[flagBranches]
+	if withBranches {
+		versions, err := c.branchIssues(s, "")
+		if err != nil {
+			return output{}, err
+		}
+		rows = append(rows, versions...)
+	}
 	status, milestone, tags := c.value(flagStatus), c.value(flagMilestone), c.values[flagTag]
-	issues = slices.DeleteFunc(issues, func(i model.Issue) bool {
+	rows = slices.DeleteFunc(rows, func(v branchVersion) bool {
+		i := v.issue
 		return status != "" && i.Status != status ||
 			milestone != "" && i.Milestone != milestone ||
 			slices.ContainsFunc(tags, func(t string) bool { return !slices.Contains(i.Tags, t) }) ||
 			byDue && (i.Due == "" || i.Due >= dueBefore)
 	})
-	data := make([]issueSummaryJSON, len(issues))
+	data := make([]lsJSON, len(rows))
 	var text strings.Builder
-	for n, i := range issues {
-		data[n] = issueSummary(i)
-		fmt.Fprintf(&text, "%s\t%s\t%s\n", i.ID, i.Status, i.Title)
+	for n, v := range rows {
+		data[n] = lsJSON{issueSummaryJSON: issueSummary(v.issue)}
+		if withBranches {
+			data[n].Branch = &v.branch
+		}
+		fmt.Fprintf(&text, "%s\t%s\t%s", v.issue.ID, v.issue.Status, v.issue.Title)
+		if v.branch != "" {
+			fmt.Fprintf(&text, "\t%s", v.branch)
+		}
+		text.WriteString("\n")
 	}
 	return output{data, text.String()}, nil
 }
