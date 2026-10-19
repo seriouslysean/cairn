@@ -171,9 +171,10 @@ An agent with only the binary learns these from `cairn help`:
   nothing.
 - The message is `chore(cairn): <command> <id> (by <actor>)`, for example `chore(cairn): comment 7f3k (by alice)`.
   The author is whoever git's config names, and the repository's hooks run.
-- A commit waits about a second for another writer in its way: one holding a lock, or one whose commit lands first.
-  When it still fails (no git, no repository, a lock held longer, a hook), the write stands and the command succeeds
-  with a warning. The next write to the same issue commits what was left.
+- A commit is tried once. When it fails (no git, no repository, another writer's lock, a hook), the write stands and
+  the command succeeds with a warning. The next write to the same issue commits what was left.
+- Two writes at the same moment can collide on git's locks, and then one of them is left uncommitted. To commit every
+  write, run writes one at a time.
 - It commits on the branch checked out, so it suits a tracker kept in a repository of its own. In a repository that
   works through pull requests, leave it off.
 
