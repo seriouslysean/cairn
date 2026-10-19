@@ -11,8 +11,22 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
+)
+
+// The frontmatter's syntax.
+const (
+	delimiter = "---"        // the line that opens and closes the frontmatter
+	keyEnd    = ":"          // ends a key; "key:" alone has an empty value
+	separator = keyEnd + " " // between a key and a value
+	quote     = `"`          // starts a quoted value
+	comment   = "#"          // starts a YAML comment, so a plain value can't
+	listOpen  = "["
+	listClose = "]"
+	listSep   = ","
+	listJoin  = listSep + " " // between the items Format writes
 )
 
 // Field is one frontmatter line. A scalar sets Value and leaves List nil. A list sets IsList and List; an empty
@@ -29,7 +43,7 @@ type Field struct {
 // list item, or a quoted value that does not unquote.
 func Parse(b []byte) ([]Field, []byte, error) {
 	first, rest, ok := bytes.Cut(b, []byte("\n"))
-	if !ok || string(first) != "---" {
+	if !ok || string(first) != delimiter {
 		return nil, nil, errors.New("doc: missing opening ---")
 	}
 	var fields []Field
@@ -40,7 +54,7 @@ func Parse(b []byte) ([]Field, []byte, error) {
 		}
 		line, after, _ := bytes.Cut(rest, []byte("\n"))
 		rest = after
-		if string(line) == "---" {
+		if string(line) == delimiter {
 			return fields, rest, nil
 		}
 		s := string(line)
@@ -67,7 +81,7 @@ func Parse(b []byte) ([]Field, []byte, error) {
 // For any file Format wrote, Format(Parse(file)) gives the same bytes.
 func Format(fields []Field, body []byte) ([]byte, error) {
 	var out bytes.Buffer
-	out.WriteString("---\n")
+	out.WriteString(delimiter + "\n")
 	seen := map[string]bool{}
 	for _, f := range fields {
 		if !validKey(f.Key) {
@@ -77,27 +91,35 @@ func Format(fields []Field, body []byte) ([]byte, error) {
 			return nil, fmt.Errorf("doc: duplicate key %q", f.Key)
 		}
 		seen[f.Key] = true
-		out.WriteString(f.Key + ": ")
+		out.WriteString(f.Key + separator)
 		if f.IsList {
-			for _, it := range f.List {
-				if it == "" || strings.TrimSpace(it) != it || strings.ContainsAny(it, ",[]\n") {
-					return nil, fmt.Errorf("doc: bad list item %q in %q", it, f.Key)
-				}
+			if i := slices.IndexFunc(f.List, badItem); i >= 0 {
+				return nil, fmt.Errorf("doc: bad list item %q in %q", f.List[i], f.Key)
 			}
-			out.WriteString("[" + strings.Join(f.List, ", ") + "]")
+			out.WriteString(listOpen + strings.Join(f.List, listJoin) + listClose)
+		} else if needsQuote(f.Value) {
+			out.WriteString(strconv.Quote(f.Value))
 		} else {
-			v := f.Value
-			if v == "" || strings.TrimSpace(v) != v || strings.ContainsAny(v[:1], `"[#`) ||
-				strings.Contains(v, ": ") || strings.Contains(v, "\n") {
-				v = strconv.Quote(v)
-			}
-			out.WriteString(v)
+			out.WriteString(f.Value)
 		}
 		out.WriteString("\n")
 	}
-	out.WriteString("---\n")
+	out.WriteString(delimiter + "\n")
 	out.Write(body)
 	return out.Bytes(), nil
+}
+
+// needsQuote reports whether a scalar must be quoted to parse back as itself: it is empty, has leading or trailing
+// space, starts like a quoted value, a list or a comment, or holds a separator or a newline.
+func needsQuote(v string) bool {
+	return v == "" || strings.TrimSpace(v) != v || strings.ContainsAny(v[:1], quote+listOpen+comment) ||
+		strings.Contains(v, separator) || strings.Contains(v, "\n")
+}
+
+// badItem reports whether a list item cannot be written: it is empty, has leading or trailing space, or holds a
+// list character or a newline.
+func badItem(it string) bool {
+	return it == "" || strings.TrimSpace(it) != it || strings.ContainsAny(it, listSep+listOpen+listClose+"\n")
 }
 
 // validKey reports whether k is a lower-case letter followed by lower-case letters, digits, "_" or "-".
@@ -116,33 +138,30 @@ func validKey(k string) bool {
 
 // parseLine parses one "key: value" line.
 func parseLine(s string) (Field, error) {
-	key, val, ok := strings.Cut(s, ":")
+	if key, ok := strings.CutSuffix(s, keyEnd); ok && validKey(key) {
+		return Field{Key: key}, nil
+	}
+	key, val, ok := strings.Cut(s, separator)
 	if !ok || !validKey(key) {
 		return Field{}, fmt.Errorf("doc: malformed line %q", s)
 	}
 	f := Field{Key: key}
-	if val == "" {
-		return f, nil
-	}
-	if val[0] != ' ' {
-		return Field{}, fmt.Errorf("doc: malformed line %q", s)
-	}
-	val = val[1:]
 	switch {
-	case strings.HasPrefix(val, `"`):
+	case strings.HasPrefix(val, quote):
 		u, err := strconv.Unquote(val)
 		if err != nil {
 			return Field{}, fmt.Errorf("doc: bad quoted value for %q: %w", key, err)
 		}
 		f.Value = u
-	case strings.HasPrefix(val, "["):
-		if !strings.HasSuffix(val, "]") {
+	case strings.HasPrefix(val, listOpen):
+		inner, ok := strings.CutSuffix(strings.TrimPrefix(val, listOpen), listClose)
+		if !ok {
 			return Field{}, fmt.Errorf("doc: unterminated list for %q", key)
 		}
 		f.IsList = true
 		f.List = []string{}
-		if inner := strings.TrimSpace(val[1 : len(val)-1]); inner != "" {
-			for it := range strings.SplitSeq(inner, ",") {
+		if inner = strings.TrimSpace(inner); inner != "" {
+			for it := range strings.SplitSeq(inner, listSep) {
 				it = strings.TrimSpace(it)
 				if it == "" {
 					return Field{}, fmt.Errorf("doc: empty list item in %q", key)

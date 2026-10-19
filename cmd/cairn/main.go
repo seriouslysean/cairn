@@ -25,7 +25,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintln(stderr, "cairn:", err)
-		return 1
+		return cli.ExitError
 	}
 	return cli.Run(args, cli.Env{Version: version(), Dir: dir, Stdout: stdout, Stderr: stderr, Getenv: os.Getenv})
 }

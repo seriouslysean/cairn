@@ -1,24 +1,26 @@
 // Package model holds Cairn's issues, comments, milestones and config, and converts each to and from the
 // frontmatter fields of its file.
 //
-// Parsing checks the shape of each value (ids, dates, times, numbers, and scalar or list) but not statuses, tags or kinds against
-// the config: a config change must never stop an old file from loading. Keys the parser does not know are kept, in
-// order, in Extra (nil when there are none), and written back after the known keys, so a file from a newer Cairn
-// survives an edit.
+// Parsing checks the shape of each value (ids, dates, times, numbers, and scalar or list) but not statuses, tags or
+// kinds against the config: a config change must never stop an old file from loading. Keys the parser does not know
+// are kept, in order, in Extra (nil when there are none), and written back after the known keys, so a file from a
+// newer Cairn survives an edit.
 //
-// Dates are "2006-01-02". Times are RFC 3339: they parse with or without fractional seconds and with any offset, and
+// Dates are DateLayout. Times are RFC 3339: they parse with or without fractional seconds and with any offset, and
 // are converted to UTC. FormatTime writes them, always with three fraction digits.
 package model
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/seriouslysean/cairn/internal/doc"
 	"github.com/seriouslysean/cairn/internal/id"
 )
+
+// DateLayout is how a date is written: "2006-01-02".
+const DateLayout = time.DateOnly
 
 // TimeLayout is how every time is written: UTC, with three fraction digits, so every time is 24 characters and times
 // compare the same as text as they do as times.
@@ -28,6 +30,41 @@ const TimeLayout = "2006-01-02T15:04:05.000Z07:00"
 func FormatTime(t time.Time) string {
 	return t.UTC().Format(TimeLayout)
 }
+
+// The comment kinds a writer may add.
+const (
+	KindEvidence = "evidence"
+	KindDecision = "decision"
+	KindResult   = "result"
+)
+
+// The frontmatter keys of every file type.
+const (
+	keyID              = "id"
+	keyTitle           = "title"
+	keyStatus          = "status"
+	keyTags            = "tags"
+	keyMilestone       = "milestone"
+	keyDue             = "due"
+	keyBy              = "by"
+	keyPersona         = "persona"
+	keyModel           = "model"
+	keyCreated         = "created"
+	keyUpdated         = "updated"
+	keyGitHub          = "github"
+	keyKind            = "kind"
+	keyAt              = "at"
+	keySource          = "source"
+	keyRetractedBy     = "retracted_by"
+	keyRetractedAt     = "retracted_at"
+	keyRetractedReason = "retracted_reason"
+	keyDisprovedBy     = "disproved_by"
+	keyStatuses        = "statuses"
+	keyTagGroups       = "tag_groups"
+	keyGitHubRepo      = "github_repo"
+	keyEmbeddingsURL   = "embeddings_url"
+	keyDupeText        = "dupe_text"
+)
 
 // Issue is the issue.md file of an issue folder. Required keys: id, title, status, created, updated. The others are
 // left out of the file when empty (GitHub when 0).
@@ -66,6 +103,17 @@ type Comment struct {
 	Body            string
 }
 
+// Retracted reports whether the comment has been retracted.
+func (c Comment) Retracted() bool {
+	return c.RetractedBy != ""
+}
+
+// ValidMilestoneName reports whether s has no "/". Every milestone id, and the milestone an issue names, must pass:
+// a milestone's id is its file name.
+func ValidMilestoneName(s string) bool {
+	return !strings.Contains(s, "/")
+}
+
 // Milestone is one file in milestones/. Its id is its file name without ".md" and is any non-empty name without "/"
 // (for example "v0.4"). Required keys: id, title, status. Due is left out of the file when empty.
 type Milestone struct {
@@ -97,333 +145,149 @@ func DefaultConfig() Config {
 	}
 }
 
-// issueKnownKeys are the frontmatter keys ParseIssue handles.
-var issueKnownKeys = map[string]bool{
-	"id": true, "title": true, "status": true, "tags": true,
-	"milestone": true, "due": true, "by": true, "persona": true, "model": true,
-	"created": true, "updated": true, "github": true,
-}
-
 // ParseIssue builds an Issue from a file's frontmatter and body. It returns an error for a missing required key, a
 // bad id, date, time or number, or a scalar where a list belongs (or the reverse).
 func ParseIssue(fields []doc.Field, body []byte) (Issue, error) {
-	i := Issue{Body: string(body)}
-	var extra []doc.Field
-	for _, f := range fields {
-		if !issueKnownKeys[f.Key] {
-			extra = append(extra, f)
-			continue
-		}
-		if err := checkShape(f, f.Key == "tags"); err != nil {
-			return Issue{}, err
-		}
-		switch f.Key {
-		case "id":
-			i.ID = f.Value
-		case "title":
-			i.Title = f.Value
-		case "status":
-			i.Status = f.Value
-		case "tags":
-			i.Tags = f.List
-		case "milestone":
-			i.Milestone = f.Value
-		case "due":
-			_, err := time.Parse("2006-01-02", f.Value)
-			if err != nil {
-				return Issue{}, fmt.Errorf("model: bad due date %q: %w", f.Value, err)
-			}
-			i.Due = f.Value
-		case "by":
-			i.By = f.Value
-		case "persona":
-			i.Persona = f.Value
-		case "model":
-			i.Model = f.Value
-		case "created":
-			t, err := time.Parse(time.RFC3339, f.Value)
-			if err != nil {
-				return Issue{}, fmt.Errorf("model: bad created time %q: %w", f.Value, err)
-			}
-			i.Created = t.UTC()
-		case "updated":
-			t, err := time.Parse(time.RFC3339, f.Value)
-			if err != nil {
-				return Issue{}, fmt.Errorf("model: bad updated time %q: %w", f.Value, err)
-			}
-			i.Updated = t.UTC()
-		case "github":
-			n, err := strconv.Atoi(f.Value)
-			if err != nil {
-				return Issue{}, fmt.Errorf("model: bad github number %q: %w", f.Value, err)
-			}
-			i.GitHub = n
-		}
+	r := newReader(fields)
+	i := Issue{
+		ID:        r.text(keyID),
+		Title:     r.text(keyTitle),
+		Status:    r.text(keyStatus),
+		Tags:      r.list(keyTags, nil),
+		Milestone: r.text(keyMilestone),
+		Due:       r.date(keyDue),
+		By:        r.text(keyBy),
+		Persona:   r.text(keyPersona),
+		Model:     r.text(keyModel),
+		Created:   r.time(keyCreated),
+		Updated:   r.time(keyUpdated),
+		GitHub:    r.number(keyGitHub),
+		Body:      string(body),
 	}
-	if i.ID == "" {
-		return Issue{}, fmt.Errorf("model: missing required key \"id\"")
+	if err := r.done(keyID, keyTitle, keyStatus, keyCreated, keyUpdated); err != nil {
+		return Issue{}, err
 	}
 	if !id.Valid(i.ID) {
 		return Issue{}, fmt.Errorf("model: bad issue id %q", i.ID)
 	}
-	if i.Title == "" {
-		return Issue{}, fmt.Errorf("model: missing required key \"title\"")
-	}
-	if i.Status == "" {
-		return Issue{}, fmt.Errorf("model: missing required key \"status\"")
-	}
-	if i.Created.IsZero() {
-		return Issue{}, fmt.Errorf("model: missing required key \"created\"")
-	}
-	if i.Updated.IsZero() {
-		return Issue{}, fmt.Errorf("model: missing required key \"updated\"")
-	}
-	i.Extra = extra
+	i.Extra = r.extra()
 	return i, nil
 }
 
-// Fields returns the issue's frontmatter in the order id, title, status, tags, milestone, due, created, updated,
-// github, then Extra.
+// Fields returns the issue's frontmatter in the order id, title, status, tags, milestone, due, by, persona, model,
+// created, updated, github, then Extra.
 func (i Issue) Fields() []doc.Field {
-	fields := []doc.Field{
-		{Key: "id", Value: i.ID},
-		{Key: "title", Value: i.Title},
-		{Key: "status", Value: i.Status},
-	}
-	if len(i.Tags) > 0 {
-		fields = append(fields, doc.Field{Key: "tags", List: i.Tags, IsList: true})
-	}
-	if i.Milestone != "" {
-		fields = append(fields, doc.Field{Key: "milestone", Value: i.Milestone})
-	}
-	if i.Due != "" {
-		fields = append(fields, doc.Field{Key: "due", Value: i.Due})
-	}
-	for _, f := range []doc.Field{{Key: "by", Value: i.By}, {Key: "persona", Value: i.Persona},
-		{Key: "model", Value: i.Model}} {
-		if f.Value != "" {
-			fields = append(fields, f)
-		}
-	}
-	fields = append(fields,
-		doc.Field{Key: "created", Value: FormatTime(i.Created)},
-		doc.Field{Key: "updated", Value: FormatTime(i.Updated)},
-	)
-	if i.GitHub != 0 {
-		fields = append(fields, doc.Field{Key: "github", Value: strconv.Itoa(i.GitHub)})
-	}
-	fields = append(fields, i.Extra...)
-	return fields
-}
-
-// commentKnownKeys are the frontmatter keys ParseComment handles.
-var commentKnownKeys = map[string]bool{
-	"id": true, "kind": true, "by": true, "persona": true, "model": true,
-	"at": true, "source": true, "retracted_by": true, "retracted_at": true,
-	"retracted_reason": true, "disproved_by": true,
+	var w writer
+	w.text(keyID, i.ID)
+	w.text(keyTitle, i.Title)
+	w.text(keyStatus, i.Status)
+	w.optList(keyTags, i.Tags)
+	w.optText(keyMilestone, i.Milestone)
+	w.optText(keyDue, i.Due)
+	w.optText(keyBy, i.By)
+	w.optText(keyPersona, i.Persona)
+	w.optText(keyModel, i.Model)
+	w.time(keyCreated, i.Created)
+	w.time(keyUpdated, i.Updated)
+	w.optNumber(keyGitHub, i.GitHub)
+	return w.with(i.Extra)
 }
 
 // ParseComment builds a Comment from a file's frontmatter and body, with the same errors as ParseIssue. The id must
 // pass id.ValidComment, and disproved_by too when present.
 func ParseComment(fields []doc.Field, body []byte) (Comment, error) {
-	c := Comment{Body: string(body)}
-	var extra []doc.Field
-	for _, f := range fields {
-		if !commentKnownKeys[f.Key] {
-			extra = append(extra, f)
-			continue
-		}
-		if err := checkShape(f, false); err != nil {
-			return Comment{}, err
-		}
-		switch f.Key {
-		case "id":
-			c.ID = f.Value
-		case "kind":
-			c.Kind = f.Value
-		case "by":
-			c.By = f.Value
-		case "persona":
-			c.Persona = f.Value
-		case "model":
-			c.Model = f.Value
-		case "at":
-			t, err := time.Parse(time.RFC3339, f.Value)
-			if err != nil {
-				return Comment{}, fmt.Errorf("model: bad at time %q: %w", f.Value, err)
-			}
-			c.At = t.UTC()
-		case "source":
-			c.Source = f.Value
-		case "retracted_by":
-			c.RetractedBy = f.Value
-		case "retracted_at":
-			t, err := time.Parse(time.RFC3339, f.Value)
-			if err != nil {
-				return Comment{}, fmt.Errorf("model: bad retracted_at time %q: %w", f.Value, err)
-			}
-			c.RetractedAt = t.UTC()
-		case "retracted_reason":
-			c.RetractedReason = f.Value
-		case "disproved_by":
-			c.DisprovedBy = f.Value
-		}
+	r := newReader(fields)
+	c := Comment{
+		ID:              r.text(keyID),
+		Kind:            r.text(keyKind),
+		By:              r.text(keyBy),
+		Persona:         r.text(keyPersona),
+		Model:           r.text(keyModel),
+		At:              r.time(keyAt),
+		Source:          r.text(keySource),
+		RetractedBy:     r.text(keyRetractedBy),
+		RetractedAt:     r.time(keyRetractedAt),
+		RetractedReason: r.text(keyRetractedReason),
+		DisprovedBy:     r.text(keyDisprovedBy),
+		Body:            string(body),
 	}
-	if c.ID == "" {
-		return Comment{}, fmt.Errorf("model: missing required key \"id\"")
+	if err := r.done(keyID, keyKind, keyBy, keyAt); err != nil {
+		return Comment{}, err
 	}
 	if !id.ValidComment(c.ID) {
 		return Comment{}, fmt.Errorf("model: bad comment id %q", c.ID)
 	}
-	if c.Kind == "" {
-		return Comment{}, fmt.Errorf("model: missing required key \"kind\"")
-	}
-	if c.By == "" {
-		return Comment{}, fmt.Errorf("model: missing required key \"by\"")
-	}
-	if c.At.IsZero() {
-		return Comment{}, fmt.Errorf("model: missing required key \"at\"")
-	}
 	if c.DisprovedBy != "" && !id.ValidComment(c.DisprovedBy) {
 		return Comment{}, fmt.Errorf("model: bad disproved_by id %q", c.DisprovedBy)
 	}
-	c.Extra = extra
+	c.Extra = r.extra()
 	return c, nil
 }
 
 // Fields returns the comment's frontmatter in the order id, kind, by, persona, model, at, source, retracted_by,
 // retracted_at, retracted_reason, disproved_by, then Extra.
 func (c Comment) Fields() []doc.Field {
-	fields := []doc.Field{
-		{Key: "id", Value: c.ID},
-		{Key: "kind", Value: c.Kind},
-		{Key: "by", Value: c.By},
-	}
-	if c.Persona != "" {
-		fields = append(fields, doc.Field{Key: "persona", Value: c.Persona})
-	}
-	if c.Model != "" {
-		fields = append(fields, doc.Field{Key: "model", Value: c.Model})
-	}
-	fields = append(fields, doc.Field{Key: "at", Value: FormatTime(c.At)})
-	if c.Source != "" {
-		fields = append(fields, doc.Field{Key: "source", Value: c.Source})
-	}
-	if c.RetractedBy != "" {
-		fields = append(fields, doc.Field{Key: "retracted_by", Value: c.RetractedBy})
-	}
-	if !c.RetractedAt.IsZero() {
-		fields = append(fields, doc.Field{Key: "retracted_at", Value: FormatTime(c.RetractedAt)})
-	}
-	if c.RetractedReason != "" {
-		fields = append(fields, doc.Field{Key: "retracted_reason", Value: c.RetractedReason})
-	}
-	if c.DisprovedBy != "" {
-		fields = append(fields, doc.Field{Key: "disproved_by", Value: c.DisprovedBy})
-	}
-	fields = append(fields, c.Extra...)
-	return fields
-}
-
-// milestoneKnownKeys are the frontmatter keys ParseMilestone handles.
-var milestoneKnownKeys = map[string]bool{
-	"id": true, "title": true, "status": true, "due": true,
+	var w writer
+	w.text(keyID, c.ID)
+	w.text(keyKind, c.Kind)
+	w.text(keyBy, c.By)
+	w.optText(keyPersona, c.Persona)
+	w.optText(keyModel, c.Model)
+	w.time(keyAt, c.At)
+	w.optText(keySource, c.Source)
+	w.optText(keyRetractedBy, c.RetractedBy)
+	w.optTime(keyRetractedAt, c.RetractedAt)
+	w.optText(keyRetractedReason, c.RetractedReason)
+	w.optText(keyDisprovedBy, c.DisprovedBy)
+	return w.with(c.Extra)
 }
 
 // ParseMilestone builds a Milestone from a file's frontmatter and body, with the same errors as ParseIssue.
 func ParseMilestone(fields []doc.Field, body []byte) (Milestone, error) {
-	m := Milestone{Body: string(body)}
-	var extra []doc.Field
-	for _, f := range fields {
-		if !milestoneKnownKeys[f.Key] {
-			extra = append(extra, f)
-			continue
-		}
-		if err := checkShape(f, false); err != nil {
-			return Milestone{}, err
-		}
-		switch f.Key {
-		case "id":
-			m.ID = f.Value
-		case "title":
-			m.Title = f.Value
-		case "status":
-			m.Status = f.Value
-		case "due":
-			_, err := time.Parse("2006-01-02", f.Value)
-			if err != nil {
-				return Milestone{}, fmt.Errorf("model: bad due date %q: %w", f.Value, err)
-			}
-			m.Due = f.Value
-		}
+	r := newReader(fields)
+	m := Milestone{
+		ID:     r.text(keyID),
+		Title:  r.text(keyTitle),
+		Status: r.text(keyStatus),
+		Due:    r.date(keyDue),
+		Body:   string(body),
 	}
-	if m.ID == "" {
-		return Milestone{}, fmt.Errorf("model: missing required key \"id\"")
+	if err := r.done(keyID, keyTitle, keyStatus); err != nil {
+		return Milestone{}, err
 	}
-	if strings.Contains(m.ID, "/") {
+	if !ValidMilestoneName(m.ID) {
 		return Milestone{}, fmt.Errorf("model: milestone id %q must not contain \"/\"", m.ID)
 	}
-	if m.Title == "" {
-		return Milestone{}, fmt.Errorf("model: missing required key \"title\"")
-	}
-	if m.Status == "" {
-		return Milestone{}, fmt.Errorf("model: missing required key \"status\"")
-	}
-	m.Extra = extra
+	m.Extra = r.extra()
 	return m, nil
 }
 
 // Fields returns the milestone's frontmatter in the order id, title, status, due, then Extra.
 func (m Milestone) Fields() []doc.Field {
-	fields := []doc.Field{
-		{Key: "id", Value: m.ID},
-		{Key: "title", Value: m.Title},
-		{Key: "status", Value: m.Status},
-	}
-	if m.Due != "" {
-		fields = append(fields, doc.Field{Key: "due", Value: m.Due})
-	}
-	fields = append(fields, m.Extra...)
-	return fields
-}
-
-// configKnownKeys are the frontmatter keys ParseConfig handles.
-var configKnownKeys = map[string]bool{
-	"statuses": true, "tag_groups": true, "github_repo": true,
-	"embeddings_url": true, "dupe_text": true,
+	var w writer
+	w.text(keyID, m.ID)
+	w.text(keyTitle, m.Title)
+	w.text(keyStatus, m.Status)
+	w.optText(keyDue, m.Due)
+	return w.with(m.Extra)
 }
 
 // ParseConfig builds a Config from config.yml's frontmatter, taking DefaultConfig's value for each absent key. It
 // returns an error for a bad number or a scalar where a list belongs.
 func ParseConfig(fields []doc.Field) (Config, error) {
-	c := DefaultConfig()
-	var extra []doc.Field
-	for _, f := range fields {
-		if !configKnownKeys[f.Key] {
-			extra = append(extra, f)
-			continue
-		}
-		if err := checkShape(f, f.Key == "statuses" || f.Key == "tag_groups"); err != nil {
-			return Config{}, err
-		}
-		switch f.Key {
-		case "statuses":
-			c.Statuses = f.List
-		case "tag_groups":
-			c.TagGroups = f.List
-		case "github_repo":
-			c.GitHubRepo = f.Value
-		case "embeddings_url":
-			c.EmbeddingsURL = f.Value
-		case "dupe_text":
-			v, err := strconv.ParseFloat(f.Value, 64)
-			if err != nil {
-				return Config{}, fmt.Errorf("model: bad dupe_text %q: %w", f.Value, err)
-			}
-			c.DupeText = v
-		}
+	def := DefaultConfig()
+	r := newReader(fields)
+	c := Config{
+		Statuses:      r.list(keyStatuses, def.Statuses),
+		TagGroups:     r.list(keyTagGroups, def.TagGroups),
+		GitHubRepo:    r.text(keyGitHubRepo),
+		EmbeddingsURL: r.text(keyEmbeddingsURL),
+		DupeText:      r.float(keyDupeText, def.DupeText),
 	}
-	c.Extra = extra
+	if err := r.done(); err != nil {
+		return Config{}, err
+	}
+	c.Extra = r.extra()
 	return c, nil
 }
 
@@ -431,28 +295,11 @@ func ParseConfig(fields []doc.Field) (Config, error) {
 // then Extra. github_repo and embeddings_url are left out when empty. Numbers are written with
 // strconv.FormatFloat(f, 'g', -1, 64).
 func (c Config) Fields() []doc.Field {
-	fields := []doc.Field{
-		{Key: "statuses", List: c.Statuses, IsList: true},
-		{Key: "tag_groups", List: c.TagGroups, IsList: true},
-	}
-	if c.GitHubRepo != "" {
-		fields = append(fields, doc.Field{Key: "github_repo", Value: c.GitHubRepo})
-	}
-	if c.EmbeddingsURL != "" {
-		fields = append(fields, doc.Field{Key: "embeddings_url", Value: c.EmbeddingsURL})
-	}
-	fields = append(fields, doc.Field{Key: "dupe_text", Value: strconv.FormatFloat(c.DupeText, 'g', -1, 64)})
-	fields = append(fields, c.Extra...)
-	return fields
-}
-
-// checkShape returns an error when f is a list and list is false, or the reverse.
-func checkShape(f doc.Field, list bool) error {
-	switch {
-	case list && !f.IsList:
-		return fmt.Errorf("model: %s must be a list", f.Key)
-	case !list && f.IsList:
-		return fmt.Errorf("model: %s must be a scalar, not a list", f.Key)
-	}
-	return nil
+	var w writer
+	w.list(keyStatuses, c.Statuses)
+	w.list(keyTagGroups, c.TagGroups)
+	w.optText(keyGitHubRepo, c.GitHubRepo)
+	w.optText(keyEmbeddingsURL, c.EmbeddingsURL)
+	w.float(keyDupeText, c.DupeText)
+	return w.with(c.Extra)
 }

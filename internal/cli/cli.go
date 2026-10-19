@@ -42,10 +42,11 @@
 //     it; a removed tag only has to be non-empty, so a tag whose group left the config can still go. An empty
 //     --milestone or --due clears it. updated becomes Env.Now as in new. Text: the id and "\n". Data: the issue.
 //   - rm <id>: deletes the issue folder, comments included. Text: "removed <id>\n". Data: {"id": id}.
-//   - show <id> [--all]: Text: the issue for a person to read, with its by, persona and model when set, then its active comments in order, each with its id,
-//     kind, by, persona and model when set, at, source when set, and body. --all adds the retracted comments in their
-//     places, each marked "retracted" with its retracted_by, retracted_at, reason and disproved_by. Data: the issue
-//     plus "comments", its active comments in order (all of them with --all), a list never null.
+//   - show <id> [--all]: Text: the issue for a person to read, with its by, persona and model when set, then its
+//     active comments in order, each with its id, kind, by, persona and model when set, at, source when set, and
+//     body. --all adds the retracted comments in their places, each marked "retracted" with its retracted_by,
+//     retracted_at, reason and disproved_by. Data: the issue plus "comments", its active comments in order (all of
+//     them with --all), a list never null.
 //   - ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]: lists issues in store order. Every filter
 //     given must match; --due-before keeps issues with a due date before d. Text: one "<id>\t<status>\t<title>\n"
 //     line per issue. Data: a list of issues without "body" (an empty list, never null).
@@ -112,13 +113,10 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/seriouslysean/cairn/internal/model"
 	"github.com/seriouslysean/cairn/internal/store"
-	"github.com/seriouslysean/cairn/internal/words"
 )
 
 // Env is everything a command touches outside its arguments. A nil Now means time.Now, a nil Rand means
@@ -142,1531 +140,330 @@ func (e Env) stamp() time.Time {
 	return now().UTC().Truncate(time.Millisecond)
 }
 
-// Run runs one command and returns its exit code.
-func Run(args []string, env Env) int {
-	if len(args) == 0 {
-		return fail(env, false, 2, "usage", "no command given (run `cairn help`)")
-	}
-	cmd := args[0]
+// actorEnv is the environment variable that names the actor when --as is not given.
+const actorEnv = "CAIRN_ACTOR"
 
-	switch cmd {
-	case "version", "--version":
-		return runVersion(env, args[1:])
-	case "help", "--help", "-h":
-		return runHelp(env, args[1:])
-	case "init":
-		return runInit(env, args[1:])
-	case "new":
-		return runNew(env, args[1:])
-	case "edit":
-		return runEdit(env, args[1:])
-	case "rm":
-		return runRm(env, args[1:])
-	case "show":
-		return runShow(env, args[1:])
-	case "ls":
-		return runLs(env, args[1:])
-	case "comment":
-		return runComment(env, args[1:])
-	case "retract":
-		return runRetract(env, args[1:])
-	case "purge":
-		return runPurge(env, args[1:])
-	case "tags":
-		return runTags(env, args[1:])
-	case "milestones":
-		return runMilestones(env, args[1:])
-	case "search":
-		return runSearch(env, args[1:])
-	case "milestone":
-		return runMilestone(env, args[1:])
-	default:
-		jsonOn := scanJSON(args[1:])
-		return fail(env, jsonOn, 2, "usage", fmt.Sprintf("unknown command %q", cmd))
-	}
+// The prefixes of the lines on stderr: a failure's message, and each warning.
+const (
+	messagePrefix = "cairn: "
+	warningPrefix = messagePrefix + "warning: "
+)
+
+// Flag names, without the leading "--".
+const (
+	flagJSON        = "json"
+	flagAll         = "all"
+	flagAs          = "as"
+	flagPersona     = "persona"
+	flagModel       = "model"
+	flagTitle       = "title"
+	flagBody        = "body"
+	flagStatus      = "status"
+	flagTag         = "tag"
+	flagMilestone   = "milestone"
+	flagDue         = "due"
+	flagDueBefore   = "due-before"
+	flagKind        = "kind"
+	flagSource      = "source"
+	flagReason      = "reason"
+	flagDisprovedBy = "disproved-by"
+)
+
+const (
+	flagPrefix = "--"
+	endOfFlags = "--"
+)
+
+// switches are the flags that take no value. Every other flag takes one.
+var switches = map[string]bool{flagJSON: true, flagAll: true}
+
+// actorFlags are the flags every write takes.
+var actorFlags = []string{flagAs, flagPersona, flagModel}
+
+// command is one cairn command.
+type command struct {
+	flags   []string // the flags it takes besides --json, and actorFlags when it writes
+	writes  bool
+	args    int    // how many positional arguments it takes, or oneOrMore
+	argsErr string // the usage error for any other number
+	run     func(c *call) (output, error)
 }
 
-// scanJSON returns true when args contains a standalone "--json" before any "--".
+// oneOrMore as a command's args means it takes one positional argument or more.
+const oneOrMore = -1
+
+// milestoneCommand is the command whose first argument names a subcommand in milestoneCommands.
+const milestoneCommand = "milestone"
+
+var commands = map[string]command{
+	"version": {argsErr: "version takes no arguments", run: runVersion},
+	"help":    {argsErr: "help takes no arguments", run: runHelp},
+	"init":    {argsErr: "init takes no arguments", run: runInit},
+	"new": {flags: []string{flagBody, flagTag, flagMilestone, flagDue}, writes: true,
+		args: 1, argsErr: "new requires exactly one title argument", run: runNew},
+	"edit": {flags: []string{flagTitle, flagBody, flagStatus, flagTag, flagMilestone, flagDue}, writes: true,
+		args: 1, argsErr: "edit requires exactly one issue id", run: runEdit},
+	"rm":   {writes: true, args: 1, argsErr: "rm requires exactly one issue id", run: runRm},
+	"show": {flags: []string{flagAll}, args: 1, argsErr: "show requires exactly one issue id", run: runShow},
+	"ls": {flags: []string{flagStatus, flagTag, flagMilestone, flagDueBefore},
+		argsErr: "ls takes no positional arguments", run: runLs},
+	"comment": {flags: []string{flagKind, flagSource}, writes: true,
+		args: 2, argsErr: "comment requires exactly one issue id and one text", run: runComment},
+	"retract": {flags: []string{flagReason, flagDisprovedBy}, writes: true,
+		args: 2, argsErr: "retract requires exactly one issue id and one comment id", run: runRetract},
+	"purge": {writes: true,
+		args: 2, argsErr: "purge requires exactly one issue id and one comment id", run: runPurge},
+	"tags":       {argsErr: "tags takes no positional arguments", run: runTags},
+	"milestones": {argsErr: "milestones takes no positional arguments", run: runMilestones},
+	"search":     {args: oneOrMore, argsErr: "search requires at least one word", run: runSearch},
+}
+
+var milestoneCommands = map[string]command{
+	"new": {flags: []string{flagDue}, writes: true,
+		args: 2, argsErr: "milestone new requires exactly one id and one title", run: runMilestoneNew},
+	"edit": {flags: []string{flagTitle, flagStatus, flagDue}, writes: true,
+		args: 1, argsErr: "milestone edit requires exactly one milestone id", run: runMilestoneEdit},
+}
+
+// aliases are other names for commands.
+var aliases = map[string]string{"--version": "version", "--help": "help", "-h": "help"}
+
+// call is one run of a command: its environment, its parsed arguments, and the warnings it gives.
+type call struct {
+	env      Env
+	args     []string            // the positional arguments
+	values   map[string][]string // each value flag's values, in the order given
+	switches map[string]bool     // the switches given
+	warnings []string
+}
+
+// output is what a command prints when it succeeds: data with --json, text without.
+type output struct {
+	data any
+	text string
+}
+
+// Run runs one command and returns its exit code.
+func Run(args []string, env Env) int {
+	jsonOn := len(args) > 0 && scanJSON(args[1:])
+	c := &call{env: env}
+	out, err := c.dispatch(args)
+	if err == nil {
+		err = c.print(out, jsonOn)
+	}
+	if err != nil {
+		return c.fail(err, jsonOn)
+	}
+	for _, w := range c.warnings {
+		fmt.Fprintln(env.Stderr, warningPrefix+w)
+	}
+	return ExitOK
+}
+
+// scanJSON reports whether args holds a standalone "--json" before any "--".
 func scanJSON(args []string) bool {
 	for _, a := range args {
-		if a == "--" {
-			break
+		if a == endOfFlags {
+			return false
 		}
-		if a == "--json" {
+		if a == flagPrefix+flagJSON {
 			return true
 		}
 	}
 	return false
 }
 
-// flagSpec declares whether a flag takes a value and whether it is repeatable.
-type flagSpec struct {
-	TakesValue bool
-	Repeat     bool
-}
-
-// parseResult holds parsed flags and positionals.
-type parseResult struct {
-	values      map[string][]string
-	bools       map[string]bool
-	positionals []string
-}
-
-// parseFlags parses arguments after the command name according to spec.
-func parseFlags(args []string, valid map[string]flagSpec) (*parseResult, error) {
-	res := &parseResult{
-		values: map[string][]string{},
-		bools:  map[string]bool{},
+func (c *call) dispatch(args []string) (output, error) {
+	if len(args) == 0 {
+		return output{}, usageError("no command given (run `cairn help`)")
 	}
-	noMoreFlags := false
+	name, args := args[0], args[1:]
+	if name == milestoneCommand {
+		if len(args) == 0 {
+			return output{}, usageError("milestone requires a subcommand: new or edit")
+		}
+		cmd, ok := milestoneCommands[args[0]]
+		if !ok {
+			return output{}, usageError(fmt.Sprintf("unknown milestone subcommand %q", args[0]))
+		}
+		return c.exec(cmd, args[1:])
+	}
+	if alias, ok := aliases[name]; ok {
+		name = alias
+	}
+	cmd, ok := commands[name]
+	if !ok {
+		return output{}, usageError(fmt.Sprintf("unknown command %q", name))
+	}
+	return c.exec(cmd, args)
+}
+
+func (c *call) exec(cmd command, args []string) (output, error) {
+	allowed := append([]string{flagJSON}, cmd.flags...)
+	if cmd.writes {
+		allowed = append(allowed, actorFlags...)
+	}
+	if err := c.parse(args, allowed); err != nil {
+		return output{}, err
+	}
+	if !cmd.takes(len(c.args)) {
+		return output{}, usageError(cmd.argsErr)
+	}
+	return cmd.run(c)
+}
+
+// takes reports whether n positional arguments are what cmd takes.
+func (cmd command) takes(n int) bool {
+	if cmd.args == oneOrMore {
+		return n > 0
+	}
+	return n == cmd.args
+}
+
+// parse splits args into the positional arguments and the flags in allowed, as the package doc describes.
+func (c *call) parse(args, allowed []string) error {
+	c.values, c.switches = map[string][]string{}, map[string]bool{}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
-		if noMoreFlags {
-			res.positionals = append(res.positionals, a)
-			continue
-		}
-		if a == "--" {
-			noMoreFlags = true
-			continue
-		}
-		if strings.HasPrefix(a, "--") {
-			name := a[2:]
-			inlineVal := ""
-			hasInline := false
-			if idx := strings.Index(name, "="); idx >= 0 {
-				inlineVal = name[idx+1:]
-				name = name[:idx]
-				hasInline = true
-			}
-
-			spec, ok := valid[name]
-			if !ok {
-				return nil, fmt.Errorf("unknown flag --%s", name)
-			}
-			if spec.TakesValue {
-				if hasInline {
-					res.values[name] = append(res.values[name], inlineVal)
-				} else if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
-					i++
-					res.values[name] = append(res.values[name], args[i])
-				} else {
-					return nil, fmt.Errorf("flag --%s needs a value", name)
-				}
-			} else {
-				if hasInline {
-					return nil, fmt.Errorf("flag --%s does not take a value", name)
-				}
-				res.bools[name] = true
-			}
-		} else {
-			res.positionals = append(res.positionals, a)
-		}
-	}
-	return res, nil
-}
-
-func newFlags() map[string]flagSpec {
-	return map[string]flagSpec{
-		"json": {false, false}, "as": {true, false},
-		"persona": {true, false}, "model": {true, false},
-		"body": {true, false}, "tag": {true, true}, "milestone": {true, false},
-		"due": {true, false},
-	}
-}
-
-func editFlags() map[string]flagSpec {
-	return map[string]flagSpec{
-		"json": {false, false}, "as": {true, false}, "persona": {true, false},
-		"model": {true, false}, "title": {true, false}, "body": {true, false},
-		"status": {true, false}, "tag": {true, true}, "milestone": {true, false},
-		"due": {true, false},
-	}
-}
-
-func rmFlags() map[string]flagSpec {
-	return map[string]flagSpec{
-		"json": {false, false}, "as": {true, false}, "persona": {true, false},
-		"model": {true, false},
-	}
-}
-
-func showFlags() map[string]flagSpec {
-	return map[string]flagSpec{
-		"json": {false, false}, "all": {false, false},
-	}
-}
-
-func lsFlags() map[string]flagSpec {
-	return map[string]flagSpec{
-		"json": {false, false}, "status": {true, false}, "tag": {true, true},
-		"milestone": {true, false}, "due-before": {true, false},
-	}
-}
-
-func commentFlags() map[string]flagSpec {
-	return map[string]flagSpec{
-		"json": {false, false}, "as": {true, false}, "persona": {true, false},
-		"model": {true, false}, "kind": {true, false}, "source": {true, false},
-	}
-}
-
-func retractFlags() map[string]flagSpec {
-	return map[string]flagSpec{
-		"json": {false, false}, "as": {true, false}, "persona": {true, false},
-		"model": {true, false}, "reason": {true, false}, "disproved-by": {true, false},
-	}
-}
-
-func purgeFlags() map[string]flagSpec {
-	return map[string]flagSpec{
-		"json": {false, false}, "as": {true, false}, "persona": {true, false},
-		"model": {true, false},
-	}
-}
-
-func milestoneNewFlags() map[string]flagSpec {
-	return map[string]flagSpec{
-		"json": {false, false}, "as": {true, false}, "persona": {true, false},
-		"model": {true, false}, "due": {true, false},
-	}
-}
-
-func milestoneEditFlags() map[string]flagSpec {
-	return map[string]flagSpec{
-		"json": {false, false}, "as": {true, false}, "persona": {true, false},
-		"model": {true, false}, "title": {true, false}, "status": {true, false},
-		"due": {true, false},
-	}
-}
-
-func runVersion(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) > 0 {
-		return fail(env, jsonOn, 2, "usage", "version takes no arguments")
-	}
-	if jsonOn {
-		return successJSON(env, map[string]string{"version": env.Version})
-	}
-	fmt.Fprintf(env.Stdout, "cairn %s\n", env.Version)
-	return 0
-}
-
-func runHelp(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) > 0 {
-		return fail(env, jsonOn, 2, "usage", "help takes no arguments")
-	}
-	if jsonOn {
-		return successJSON(env, map[string][]string{"usage": commandUsage, "rules": agentRules})
-	}
-	fmt.Fprint(env.Stdout, "Usage: cairn <command> [args]\n"+
-		"Every command takes --json. Writes take --as (or CAIRN_ACTOR), --persona and --model.\n\n"+
-		"Commands:\n  "+strings.Join(commandUsage, "\n  ")+"\n\n"+
-		"Rules:\n  "+strings.Join(agentRules, "\n  ")+"\n")
-	return 0
-}
-
-// commandUsage is one usage line per command, in the order help prints them.
-var commandUsage = []string{
-	`init`,
-	`new "title" [--body text] [--tag t]... [--milestone m] [--due YYYY-MM-DD]`,
-	`edit <id> [--title t] [--body text] [--status s] [--tag +t|-t]... [--milestone m] [--due YYYY-MM-DD]`,
-	`rm <id>`,
-	`show <id> [--all]`,
-	`ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]`,
-	`comment <id> --kind evidence|decision|result [--source s] "text"`,
-	`retract <id> <comment> --reason "text" [--disproved-by <comment>]`,
-	`purge <id> <comment>`,
-	`tags`,
-	`milestones`,
-	`milestone new <id> "title" [--due YYYY-MM-DD]`,
-	`milestone edit <id> [--title t] [--status s] [--due YYYY-MM-DD]`,
-	`search <words>...`,
-	`version`,
-	`help`,
-}
-
-// agentRules are the rules for using Cairn that docs/spec.md gives, word for word.
-var agentRules = []string{
-	"Run cairn search before cairn new: Cairn does not look for duplicates.",
-	"Comment on an issue someone else owns rather than editing it: comments never conflict across branches.",
-	"evidence needs --source, decision quotes the owner, result says what was done.",
-	"To close an issue, add a result comment, then cairn edit <id> --status done.",
-	"Retract a wrong comment instead of deleting it. purge is only for mistakes like a pasted secret.",
-}
-
-func runInit(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) > 0 {
-		return fail(env, jsonOn, 2, "usage", "init takes no arguments")
-	}
-	s, initErr := store.Init(env.Dir)
-	if initErr != nil {
-		if errors.Is(initErr, store.ErrExists) {
-			return fail(env, jsonOn, 1, "exists", initErr.Error())
-		}
-		return fail(env, jsonOn, 1, "error", initErr.Error())
-	}
-	if jsonOn {
-		return successJSON(env, map[string]string{"dir": s.Dir})
-	}
-	fmt.Fprintf(env.Stdout, "initialized %s\n", s.Dir)
-	return 0
-}
-
-func runNew(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, newFlags())
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) != 1 {
-		return fail(env, jsonOn, 2, "usage", "new requires exactly one title argument")
-	}
-	title := res.positionals[0]
-	if strings.TrimSpace(title) == "" {
-		return fail(env, jsonOn, 2, "usage", "title must not be blank")
-	}
-
-	actor, actorErr := requireActor(env, res)
-	if actorErr != "" {
-		return fail(env, jsonOn, 2, "usage", actorErr)
-	}
-
-	s, sErr := store.Find(env.Dir)
-	if sErr != nil {
-		return storeFail(env, jsonOn, sErr, "")
-	}
-	cfg, cfgErr := s.Config()
-	if cfgErr != nil {
-		return fail(env, jsonOn, 1, "error", cfgErr.Error())
-	}
-
-	if len(cfg.Statuses) == 0 {
-		return fail(env, jsonOn, 1, "error", "config.yml lists no statuses")
-	}
-	tags := []string{}
-	for _, t := range res.values["tag"] {
-		if tagErr := validateTag(t, cfg); tagErr != "" {
-			return fail(env, jsonOn, 2, "usage", tagErr)
-		}
-		if !slices.Contains(tags, t) {
-			tags = append(tags, t)
-		}
-	}
-
-	milestone := ""
-	if vals, ok := res.values["milestone"]; ok {
-		milestone = vals[len(vals)-1]
-		if strings.Contains(milestone, "/") {
-			return fail(env, jsonOn, 2, "usage", "milestone must not contain \"/\"")
-		}
-	}
-
-	due := ""
-	if vals, ok := res.values["due"]; ok {
-		due = vals[len(vals)-1]
-		if errStr := validateDate(due); errStr != "" {
-			return fail(env, jsonOn, 2, "usage", errStr)
-		}
-	}
-
-	body := ""
-	if vals, ok := res.values["body"]; ok {
-		body = vals[len(vals)-1]
-	}
-	if body != "" && !strings.HasSuffix(body, "\n") {
-		body += "\n"
-	}
-
-	newID, idErr := s.NewIssueID(env.Rand)
-	if idErr != nil {
-		return fail(env, jsonOn, 1, "error", idErr.Error())
-	}
-
-	now := env.stamp()
-
-	issue := model.Issue{
-		ID:        newID,
-		Title:     title,
-		Status:    cfg.Statuses[0],
-		Tags:      tags,
-		Milestone: milestone,
-		Due:       due,
-		By:        actor,
-		Persona:   lastValue(res, "persona"),
-		Model:     lastValue(res, "model"),
-		Created:   now,
-		Updated:   now,
-		Body:      body,
-	}
-	if saveErr := s.SaveIssue(issue); saveErr != nil {
-		return fail(env, jsonOn, 1, "error", saveErr.Error())
-	}
-
-	if jsonOn {
-		return successJSON(env, issueToJSON(issue))
-	}
-	fmt.Fprintf(env.Stdout, "%s\n", newID)
-	return 0
-}
-
-func runEdit(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, editFlags())
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) != 1 {
-		return fail(env, jsonOn, 2, "usage", "edit requires exactly one issue id")
-	}
-	issueID := res.positionals[0]
-
-	if _, actorErr := requireActor(env, res); actorErr != "" {
-		return fail(env, jsonOn, 2, "usage", actorErr)
-	}
-
-	s, sErr := store.Find(env.Dir)
-	if sErr != nil {
-		return storeFail(env, jsonOn, sErr, "")
-	}
-	issue, _, loadErr := s.LoadIssue(issueID)
-	if loadErr != nil {
-		return storeFail(env, jsonOn, loadErr, issueID)
-	}
-	cfg, cfgErr := s.Config()
-	if cfgErr != nil {
-		return fail(env, jsonOn, 1, "error", cfgErr.Error())
-	}
-
-	_, hasTitle := res.values["title"]
-	_, hasBody := res.values["body"]
-	_, hasStatus := res.values["status"]
-	_, hasTags := res.values["tag"]
-	_, hasMilestone := res.values["milestone"]
-	_, hasDue := res.values["due"]
-	if !hasTitle && !hasBody && !hasStatus && !hasTags && !hasMilestone && !hasDue {
-		return fail(env, jsonOn, 2, "usage", "edit requires at least one change")
-	}
-
-	if hasTitle {
-		newTitle := res.values["title"][len(res.values["title"])-1]
-		if strings.TrimSpace(newTitle) == "" {
-			return fail(env, jsonOn, 2, "usage", "title must not be blank")
-		}
-		issue.Title = newTitle
-	}
-
-	if hasBody {
-		newBody := res.values["body"][len(res.values["body"])-1]
-		if newBody != "" && !strings.HasSuffix(newBody, "\n") {
-			newBody += "\n"
-		}
-		issue.Body = newBody
-	}
-
-	if hasStatus {
-		newStatus := res.values["status"][len(res.values["status"])-1]
-		if !statusValid(newStatus, cfg) {
-			return fail(env, jsonOn, 2, "usage", fmt.Sprintf("status %q is not valid", newStatus))
-		}
-		issue.Status = newStatus
-	}
-
-	if hasTags {
-		edits := res.values["tag"]
-		for _, e := range edits {
-			if tagErr := validateEditTag(e, cfg); tagErr != "" {
-				return fail(env, jsonOn, 2, "usage", tagErr)
-			}
-		}
-		issue.Tags = applyTagEdits(issue.Tags, edits)
-		if issue.Tags == nil {
-			issue.Tags = []string{}
-		}
-	}
-
-	if hasMilestone {
-		newMilestone := res.values["milestone"][len(res.values["milestone"])-1]
-		if strings.Contains(newMilestone, "/") {
-			return fail(env, jsonOn, 2, "usage", "milestone must not contain \"/\"")
-		}
-		issue.Milestone = newMilestone
-	}
-
-	if hasDue {
-		newDue := res.values["due"][len(res.values["due"])-1]
-		if newDue != "" {
-			if errStr := validateDate(newDue); errStr != "" {
-				return fail(env, jsonOn, 2, "usage", errStr)
-			}
-		}
-		issue.Due = newDue
-	}
-
-	issue.Updated = env.stamp()
-
-	if saveErr := s.SaveIssue(issue); saveErr != nil {
-		return fail(env, jsonOn, 1, "error", saveErr.Error())
-	}
-
-	if jsonOn {
-		return successJSON(env, issueToJSON(issue))
-	}
-	fmt.Fprintf(env.Stdout, "%s\n", issue.ID)
-	return 0
-}
-
-func runRm(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, rmFlags())
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) != 1 {
-		return fail(env, jsonOn, 2, "usage", "rm requires exactly one issue id")
-	}
-	issueID := res.positionals[0]
-
-	if _, actorErr := requireActor(env, res); actorErr != "" {
-		return fail(env, jsonOn, 2, "usage", actorErr)
-	}
-
-	s, sErr := store.Find(env.Dir)
-	if sErr != nil {
-		return storeFail(env, jsonOn, sErr, "")
-	}
-	if rmErr := s.RemoveIssue(issueID); rmErr != nil {
-		return storeFail(env, jsonOn, rmErr, issueID)
-	}
-
-	if jsonOn {
-		return successJSON(env, map[string]string{"id": issueID})
-	}
-	fmt.Fprintf(env.Stdout, "removed %s\n", issueID)
-	return 0
-}
-
-func runShow(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, showFlags())
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) != 1 {
-		return fail(env, jsonOn, 2, "usage", "show requires exactly one issue id")
-	}
-	issueID := res.positionals[0]
-	allComments := res.bools["all"]
-
-	s, sErr := store.Find(env.Dir)
-	if sErr != nil {
-		return storeFail(env, jsonOn, sErr, "")
-	}
-	issue, comments, loadErr := s.LoadIssue(issueID)
-	if loadErr != nil {
-		return storeFail(env, jsonOn, loadErr, issueID)
-	}
-
-	// Filter out retracted comments unless --all.
-	var shown []model.Comment
-	for _, c := range comments {
-		if !allComments && c.RetractedBy != "" {
-			continue
-		}
-		shown = append(shown, c)
-	}
-
-	if jsonOn {
-		data := issueToJSONMap(issue, true)
-		data["comments"] = commentsToJSON(shown)
-		return successJSON(env, data)
-	}
-
-	fmt.Fprintf(env.Stdout, "id: %s\ntitle: %s\nstatus: %s\n", issue.ID, issue.Title, issue.Status)
-	if len(issue.Tags) > 0 {
-		fmt.Fprintf(env.Stdout, "tags: %s\n", strings.Join(issue.Tags, ", "))
-	}
-	if issue.Milestone != "" {
-		fmt.Fprintf(env.Stdout, "milestone: %s\n", issue.Milestone)
-	}
-	if issue.Due != "" {
-		fmt.Fprintf(env.Stdout, "due: %s\n", issue.Due)
-	}
-	for _, f := range []struct{ key, value string }{{"by", issue.By}, {"persona", issue.Persona},
-		{"model", issue.Model}} {
-		if f.value != "" {
-			fmt.Fprintf(env.Stdout, "%s: %s\n", f.key, f.value)
-		}
-	}
-	fmt.Fprintf(env.Stdout, "created: %s\nupdated: %s\n",
-		model.FormatTime(issue.Created), model.FormatTime(issue.Updated))
-	if issue.Body != "" {
-		fmt.Fprintf(env.Stdout, "\n%s", issue.Body)
-	}
-	for _, c := range shown {
-		fmt.Fprintf(env.Stdout, "\n--- %s", c.ID)
-		if c.RetractedBy != "" {
-			fmt.Fprintf(env.Stdout, " [retracted]")
-		}
-		fmt.Fprintf(env.Stdout, " ---\n")
-		fmt.Fprintf(env.Stdout, "kind: %s\nby: %s\n", c.Kind, c.By)
-		if c.Persona != "" {
-			fmt.Fprintf(env.Stdout, "persona: %s\n", c.Persona)
-		}
-		if c.Model != "" {
-			fmt.Fprintf(env.Stdout, "model: %s\n", c.Model)
-		}
-		fmt.Fprintf(env.Stdout, "at: %s\n", model.FormatTime(c.At))
-		if c.Source != "" {
-			fmt.Fprintf(env.Stdout, "source: %s\n", c.Source)
-		}
-		if c.RetractedBy != "" {
-			fmt.Fprintf(env.Stdout, "retracted_by: %s\n", c.RetractedBy)
-			fmt.Fprintf(env.Stdout, "retracted_at: %s\n", model.FormatTime(c.RetractedAt))
-			fmt.Fprintf(env.Stdout, "retracted_reason: %s\n", c.RetractedReason)
-			if c.DisprovedBy != "" {
-				fmt.Fprintf(env.Stdout, "disproved_by: %s\n", c.DisprovedBy)
-			}
-		}
-		if c.Body != "" {
-			fmt.Fprintf(env.Stdout, "\n%s", c.Body)
-		}
-	}
-	return 0
-}
-
-func runLs(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, lsFlags())
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) > 0 {
-		return fail(env, jsonOn, 2, "usage", "ls takes no positional arguments")
-	}
-
-	s, sErr := store.Find(env.Dir)
-	if sErr != nil {
-		return storeFail(env, jsonOn, sErr, "")
-	}
-	issues, listErr := s.ListIssues()
-	if listErr != nil {
-		return fail(env, jsonOn, 1, "error", listErr.Error())
-	}
-
-	statusFilter := ""
-	if vals, ok := res.values["status"]; ok {
-		statusFilter = vals[len(vals)-1]
-	}
-	tagFilters := res.values["tag"]
-	milestoneFilter := ""
-	if vals, ok := res.values["milestone"]; ok {
-		milestoneFilter = vals[len(vals)-1]
-	}
-	dueBefore := ""
-	if vals, ok := res.values["due-before"]; ok {
-		dueBefore = vals[len(vals)-1]
-		if errStr := validateDate(dueBefore); errStr != "" {
-			return fail(env, jsonOn, 2, "usage", errStr)
-		}
-	}
-
-	var filtered []model.Issue
-	for _, iss := range issues {
-		if statusFilter != "" && iss.Status != statusFilter {
-			continue
-		}
-		if !tagsMatch(iss.Tags, tagFilters) {
-			continue
-		}
-		if milestoneFilter != "" && iss.Milestone != milestoneFilter {
-			continue
-		}
-		if dueBefore != "" {
-			if iss.Due == "" {
-				continue
-			}
-			if iss.Due >= dueBefore {
-				continue
-			}
-		}
-		filtered = append(filtered, iss)
-	}
-
-	if jsonOn {
-		items := make([]map[string]any, len(filtered))
-		for idx, iss := range filtered {
-			items[idx] = issueToJSONMap(iss, false)
-		}
-		return successJSON(env, items)
-	}
-	for _, iss := range filtered {
-		fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", iss.ID, iss.Status, iss.Title)
-	}
-	return 0
-}
-
-func runComment(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, commentFlags())
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) != 2 {
-		return fail(env, jsonOn, 2, "usage", "comment requires exactly one issue id and one text")
-	}
-	issueID := res.positionals[0]
-	text := res.positionals[1]
-
-	// Validate kind.
-	kind := ""
-	if vals, ok := res.values["kind"]; ok {
-		kind = vals[len(vals)-1]
-	}
-	if kind != "evidence" && kind != "decision" && kind != "result" {
-		return fail(env, jsonOn, 2, "usage", "kind must be evidence, decision or result")
-	}
-
-	// Validate source for evidence.
-	source := ""
-	if vals, ok := res.values["source"]; ok {
-		source = vals[len(vals)-1]
-	}
-	if kind == "evidence" && strings.TrimSpace(source) == "" {
-		return fail(env, jsonOn, 2, "usage", "evidence requires --source")
-	}
-
-	// Validate text.
-	if strings.TrimSpace(text) == "" {
-		return fail(env, jsonOn, 2, "usage", "comment text must not be blank")
-	}
-
-	actor, actorErr := requireActor(env, res)
-	if actorErr != "" {
-		return fail(env, jsonOn, 2, "usage", actorErr)
-	}
-
-	s, sErr := store.Find(env.Dir)
-	if sErr != nil {
-		return storeFail(env, jsonOn, sErr, "")
-	}
-
-	_, comments, loadErr := s.LoadIssue(issueID)
-	if loadErr != nil {
-		return storeFail(env, jsonOn, loadErr, issueID)
-	}
-
-	cfg, cfgErr := s.Config()
-	if cfgErr != nil {
-		return fail(env, jsonOn, 1, "error", cfgErr.Error())
-	}
-
-	// Check retracted comments for overlap warnings.
-	body := text
-	if !strings.HasSuffix(body, "\n") {
-		body += "\n"
-	}
-
-	type warning struct {
-		Comment string  `json:"comment"`
-		Reason  string  `json:"reason"`
-		Score   float64 `json:"score"`
-	}
-	var warnings []warning
-	for _, c := range comments {
-		if c.RetractedBy == "" {
-			continue
-		}
-		score := words.Overlap(text, c.Body)
-		if score >= cfg.DupeText {
-			warnings = append(warnings, warning{
-				Comment: c.ID,
-				Reason:  c.RetractedReason,
-				Score:   score,
-			})
-		}
-	}
-
-	// Generate new comment id.
-	commentID, idErr := s.NewCommentID(issueID, env.Rand)
-	if idErr != nil {
-		return storeFail(env, jsonOn, idErr, issueID)
-	}
-
-	now := env.stamp()
-	c := model.Comment{
-		ID:      commentID,
-		Kind:    kind,
-		By:      actor,
-		Persona: lastValue(res, "persona"),
-		Model:   lastValue(res, "model"),
-		At:      now,
-		Source:  source,
-		Body:    body,
-	}
-
-	if saveErr := s.SaveComment(issueID, c); saveErr != nil {
-		return fail(env, jsonOn, 1, "error", saveErr.Error())
-	}
-
-	// Print warnings.
-	for _, w := range warnings {
-		fmt.Fprintf(env.Stderr, "cairn: warning: matches retracted comment %s (reason %q)\n", w.Comment, w.Reason)
-	}
-
-	if jsonOn {
-		data := map[string]any{
-			"comment":  commentToJSON(c),
-			"warnings": warnings,
-		}
-		if warnings == nil {
-			data["warnings"] = []warning{}
-		}
-		return successJSON(env, data)
-	}
-	fmt.Fprintf(env.Stdout, "%s\n", commentID)
-	return 0
-}
-
-func runRetract(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, retractFlags())
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) != 2 {
-		return fail(env, jsonOn, 2, "usage", "retract requires exactly one issue id and one comment id")
-	}
-	issueID := res.positionals[0]
-	commentID := res.positionals[1]
-
-	reason := ""
-	if vals, ok := res.values["reason"]; ok {
-		reason = vals[len(vals)-1]
-	}
-	if strings.TrimSpace(reason) == "" {
-		return fail(env, jsonOn, 2, "usage", "retract requires a non-blank --reason")
-	}
-
-	disprovedBy := ""
-	if vals, ok := res.values["disproved-by"]; ok {
-		disprovedBy = vals[len(vals)-1]
-	}
-	if disprovedBy != "" && disprovedBy == commentID {
-		return fail(env, jsonOn, 2, "usage", "disproved-by must not be the same comment as the one being retracted")
-	}
-
-	actor, actorErr := requireActor(env, res)
-	if actorErr != "" {
-		return fail(env, jsonOn, 2, "usage", actorErr)
-	}
-
-	s, sErr := store.Find(env.Dir)
-	if sErr != nil {
-		return storeFail(env, jsonOn, sErr, "")
-	}
-
-	_, comments, loadErr := s.LoadIssue(issueID)
-	if loadErr != nil {
-		return storeFail(env, jsonOn, loadErr, issueID)
-	}
-
-	// Find the comment to retract.
-	var target *model.Comment
-	for idx := range comments {
-		if comments[idx].ID == commentID {
-			target = &comments[idx]
+		if a == endOfFlags {
+			c.args = append(c.args, args[i+1:]...)
 			break
 		}
-	}
-	if target == nil {
-		return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q on issue %q", commentID, issueID))
-	}
-
-	// Check disproved-by exists if given.
-	if disprovedBy != "" {
-		found := false
-		for _, c := range comments {
-			if c.ID == disprovedBy {
-				found = true
-				break
-			}
+		name, ok := strings.CutPrefix(a, flagPrefix)
+		if !ok {
+			c.args = append(c.args, a)
+			continue
 		}
-		if !found {
-			return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q on issue %q", disprovedBy, issueID))
+		name, inline, hasInline := strings.Cut(name, "=")
+		switch {
+		case !slices.Contains(allowed, name):
+			return usageError(fmt.Sprintf("unknown flag --%s", name))
+		case switches[name] && hasInline:
+			return usageError(fmt.Sprintf("flag --%s does not take a value", name))
+		case switches[name]:
+			c.switches[name] = true
+		case hasInline:
+			c.values[name] = append(c.values[name], inline)
+		case i+1 < len(args) && !strings.HasPrefix(args[i+1], flagPrefix):
+			i++
+			c.values[name] = append(c.values[name], args[i])
+		default:
+			return usageError(fmt.Sprintf("flag --%s needs a value", name))
 		}
 	}
-
-	// Check not already retracted.
-	if target.RetractedBy != "" {
-		return fail(env, jsonOn, 1, "error", fmt.Sprintf("comment %q is already retracted", commentID))
-	}
-
-	// Apply retraction.
-	target.RetractedBy = actor
-	target.RetractedAt = env.stamp()
-	target.RetractedReason = reason
-	target.DisprovedBy = disprovedBy
-
-	if saveErr := s.SaveComment(issueID, *target); saveErr != nil {
-		return fail(env, jsonOn, 1, "error", saveErr.Error())
-	}
-
-	if jsonOn {
-		return successJSON(env, commentToJSON(*target))
-	}
-	fmt.Fprintf(env.Stdout, "retracted %s\n", commentID)
-	return 0
+	return nil
 }
 
-func runPurge(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, purgeFlags())
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) != 2 {
-		return fail(env, jsonOn, 2, "usage", "purge requires exactly one issue id and one comment id")
-	}
-	issueID := res.positionals[0]
-	commentID := res.positionals[1]
-
-	if _, actorErr := requireActor(env, res); actorErr != "" {
-		return fail(env, jsonOn, 2, "usage", actorErr)
-	}
-
-	s, sErr := store.Find(env.Dir)
-	if sErr != nil {
-		return storeFail(env, jsonOn, sErr, "")
-	}
-
-	if rmErr := s.RemoveComment(issueID, commentID); rmErr != nil {
-		if errors.Is(rmErr, store.ErrNoComment) {
-			return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no comment %q on issue %q", commentID, issueID))
-		}
-		return storeFail(env, jsonOn, rmErr, issueID)
-	}
-
-	if jsonOn {
-		return successJSON(env, map[string]string{"id": issueID, "comment": commentID})
-	}
-	fmt.Fprintf(env.Stdout, "purged %s\n", commentID)
-	return 0
+// value is the last value given for a flag, or "" when it was not given.
+func (c *call) value(name string) string {
+	v, _ := c.given(name)
+	return v
 }
 
-func runTags(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
+// given is the last value given for a flag, and whether it was given.
+func (c *call) given(name string) (string, bool) {
+	vs := c.values[name]
+	if len(vs) == 0 {
+		return "", false
 	}
-	if len(res.positionals) > 0 {
-		return fail(env, jsonOn, 2, "usage", "tags takes no positional arguments")
-	}
-
-	s, sErr := store.Find(env.Dir)
-	if sErr != nil {
-		return storeFail(env, jsonOn, sErr, "")
-	}
-	issues, listErr := s.ListIssues()
-	if listErr != nil {
-		return fail(env, jsonOn, 1, "error", listErr.Error())
-	}
-
-	counts := map[string]int{}
-	for _, iss := range issues {
-		seen := map[string]bool{}
-		for _, t := range iss.Tags {
-			if !seen[t] {
-				seen[t] = true
-				counts[t]++
-			}
-		}
-	}
-
-	type tagEntry struct {
-		Tag   string `json:"tag"`
-		Count int    `json:"count"`
-	}
-	entries := make([]tagEntry, 0, len(counts))
-	for t, c := range counts {
-		entries = append(entries, tagEntry{Tag: t, Count: c})
-	}
-	sort.Slice(entries, func(a, b int) bool {
-		return entries[a].Tag < entries[b].Tag
-	})
-
-	if jsonOn {
-		return successJSON(env, entries)
-	}
-	for _, e := range entries {
-		fmt.Fprintf(env.Stdout, "%s\t%d\n", e.Tag, e.Count)
-	}
-	return 0
+	return vs[len(vs)-1], true
 }
 
-func runMilestones(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) > 0 {
-		return fail(env, jsonOn, 2, "usage", "milestones takes no positional arguments")
-	}
-
-	s, sErr := store.Find(env.Dir)
-	if sErr != nil {
-		return storeFail(env, jsonOn, sErr, "")
-	}
-	milestones, listErr := s.ListMilestones()
-	if listErr != nil {
-		return fail(env, jsonOn, 1, "error", listErr.Error())
-	}
-	issues, issueErr := s.ListIssues()
-	if issueErr != nil {
-		return fail(env, jsonOn, 1, "error", issueErr.Error())
-	}
-
-	issueCounts := map[string]int{}
-	for _, iss := range issues {
-		if iss.Milestone != "" {
-			issueCounts[iss.Milestone]++
-		}
-	}
-
-	type milestoneEntry struct {
-		ID     string `json:"id"`
-		Title  string `json:"title"`
-		Status string `json:"status"`
-		Due    string `json:"due"`
-		Issues int    `json:"issues"`
-	}
-
-	seen := map[string]bool{}
-	entries := []milestoneEntry{}
-	for _, m := range milestones {
-		seen[m.ID] = true
-		entries = append(entries, milestoneEntry{
-			ID: m.ID, Title: m.Title, Status: m.Status, Due: m.Due,
-			Issues: issueCounts[m.ID],
-		})
-	}
-	for _, iss := range issues {
-		if iss.Milestone != "" && !seen[iss.Milestone] {
-			seen[iss.Milestone] = true
-			entries = append(entries, milestoneEntry{
-				ID: iss.Milestone, Title: "", Status: "", Due: "",
-				Issues: issueCounts[iss.Milestone],
-			})
-		}
-	}
-
-	sort.Slice(entries, func(a, b int) bool {
-		da, db := entries[a].Due, entries[b].Due
-		if da != db {
-			if da == "" {
-				return false
-			}
-			if db == "" {
-				return true
-			}
-			return da < db
-		}
-		return entries[a].ID < entries[b].ID
-	})
-
-	if jsonOn {
-		return successJSON(env, entries)
-	}
-	for _, e := range entries {
-		fmt.Fprintf(env.Stdout, "%s\t%s\t%d\t%s\n", e.ID, e.Due, e.Issues, e.Title)
-	}
-	return 0
+// anyGiven reports whether any of the flags was given.
+func (c *call) anyGiven(names ...string) bool {
+	return slices.ContainsFunc(names, func(name string) bool { return len(c.values[name]) > 0 })
 }
 
-func runSearch(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, map[string]flagSpec{"json": {false, false}})
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) == 0 {
-		return fail(env, jsonOn, 2, "usage", "search requires at least one word")
-	}
-
-	query := strings.Join(res.positionals, " ")
-	queryWords := words.Split(query)
-	if len(queryWords) == 0 {
-		return fail(env, jsonOn, 2, "usage", "search query has no words")
-	}
-
-	s, sErr := store.Find(env.Dir)
-	if sErr != nil {
-		return storeFail(env, jsonOn, sErr, "")
-	}
-	issues, listErr := s.ListIssues()
-	if listErr != nil {
-		return fail(env, jsonOn, 1, "error", listErr.Error())
-	}
-
-	type searchResult struct {
-		Issue   model.Issue
-		Matches int
-	}
-	var results []searchResult
-
-	for _, iss := range issues {
-		var searchable strings.Builder
-		searchable.WriteString(iss.Title)
-		searchable.WriteByte(' ')
-		searchable.WriteString(iss.Body)
-
-		_, comments, loadErr := s.LoadIssue(iss.ID)
-		if loadErr != nil {
-			return fail(env, jsonOn, 1, "error", loadErr.Error())
-		}
-		for _, c := range comments {
-			if c.RetractedBy != "" {
-				continue
-			}
-			searchable.WriteByte(' ')
-			searchable.WriteString(c.Body)
-			if c.Source != "" {
-				searchable.WriteByte(' ')
-				searchable.WriteString(c.Source)
-			}
-		}
-
-		textWords := words.Split(searchable.String())
-		textSet := make(map[string]bool, len(textWords))
-		for _, w := range textWords {
-			textSet[w] = true
-		}
-
-		matches := 0
-		for _, qw := range queryWords {
-			if textSet[qw] {
-				matches++
-			}
-		}
-		if matches > 0 {
-			results = append(results, searchResult{Issue: iss, Matches: matches})
-		}
-	}
-
-	sort.SliceStable(results, func(a, b int) bool {
-		return results[a].Matches > results[b].Matches
-	})
-
-	if jsonOn {
-		items := make([]map[string]any, len(results))
-		for i, r := range results {
-			m := issueToJSONMap(r.Issue, false)
-			m["matches"] = r.Matches
-			items[i] = m
-		}
-		return successJSON(env, items)
-	}
-	for _, r := range results {
-		fmt.Fprintf(env.Stdout, "%s\t%d\t%s\n", r.Issue.ID, r.Matches, r.Issue.Title)
-	}
-	return 0
-}
-
-func runMilestone(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	if len(args) == 0 {
-		return fail(env, jsonOn, 2, "usage", "milestone requires a subcommand: new or edit")
-	}
-	switch args[0] {
-	case "new":
-		return runMilestoneNew(env, args[1:])
-	case "edit":
-		return runMilestoneEdit(env, args[1:])
-	default:
-		return fail(env, jsonOn, 2, "usage", fmt.Sprintf("unknown milestone subcommand %q", args[0]))
-	}
-}
-
-func runMilestoneNew(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, milestoneNewFlags())
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) != 2 {
-		return fail(env, jsonOn, 2, "usage", "milestone new requires exactly one id and one title")
-	}
-	id := res.positionals[0]
-	title := res.positionals[1]
-
-	if !store.ValidMilestoneID(id) {
-		return fail(env, jsonOn, 2, "usage", "milestone id must not be empty, contain \"/\" or start with \".\"")
-	}
-	if strings.TrimSpace(title) == "" {
-		return fail(env, jsonOn, 2, "usage", "milestone title must not be blank")
-	}
-
-	due := ""
-	if vals, ok := res.values["due"]; ok {
-		due = vals[len(vals)-1]
-		if due != "" {
-			if errStr := validateDate(due); errStr != "" {
-				return fail(env, jsonOn, 2, "usage", errStr)
-			}
-		}
-	}
-
-	if _, actorErr := requireActor(env, res); actorErr != "" {
-		return fail(env, jsonOn, 2, "usage", actorErr)
-	}
-
-	s, sErr := store.Find(env.Dir)
-	if sErr != nil {
-		return storeFail(env, jsonOn, sErr, "")
-	}
-	cfg, cfgErr := s.Config()
-	if cfgErr != nil {
-		return fail(env, jsonOn, 1, "error", cfgErr.Error())
-	}
-	if len(cfg.Statuses) == 0 {
-		return fail(env, jsonOn, 1, "error", "config.yml lists no statuses")
-	}
-
-	switch _, loadErr := s.LoadMilestone(id); {
-	case loadErr == nil:
-		return fail(env, jsonOn, 1, "exists", fmt.Sprintf("milestone %q already exists", id))
-	case !errors.Is(loadErr, store.ErrNotFound):
-		return fail(env, jsonOn, 1, "error", loadErr.Error())
-	}
-
-	m := model.Milestone{
-		ID:     id,
-		Title:  title,
-		Status: cfg.Statuses[0],
-		Due:    due,
-	}
-	if saveErr := s.SaveMilestone(m); saveErr != nil {
-		return fail(env, jsonOn, 1, "error", saveErr.Error())
-	}
-
-	if jsonOn {
-		return successJSON(env, milestoneToJSON(m))
-	}
-	fmt.Fprintf(env.Stdout, "%s\n", id)
-	return 0
-}
-
-func runMilestoneEdit(env Env, args []string) int {
-	jsonOn := scanJSON(args)
-	res, err := parseFlags(args, milestoneEditFlags())
-	if err != nil {
-		return fail(env, jsonOn, 2, "usage", err.Error())
-	}
-	if len(res.positionals) != 1 {
-		return fail(env, jsonOn, 2, "usage", "milestone edit requires exactly one milestone id")
-	}
-	id := res.positionals[0]
-
-	_, hasTitle := res.values["title"]
-	_, hasStatus := res.values["status"]
-	_, hasDue := res.values["due"]
-	if !hasTitle && !hasStatus && !hasDue {
-		return fail(env, jsonOn, 2, "usage", "milestone edit requires at least one change")
-	}
-
-	if hasTitle {
-		newTitle := res.values["title"][len(res.values["title"])-1]
-		if strings.TrimSpace(newTitle) == "" {
-			return fail(env, jsonOn, 2, "usage", "milestone title must not be blank")
-		}
-	}
-
-	if hasDue {
-		newDue := res.values["due"][len(res.values["due"])-1]
-		if newDue != "" {
-			if errStr := validateDate(newDue); errStr != "" {
-				return fail(env, jsonOn, 2, "usage", errStr)
-			}
-		}
-	}
-
-	if _, actorErr := requireActor(env, res); actorErr != "" {
-		return fail(env, jsonOn, 2, "usage", actorErr)
-	}
-
-	s, sErr := store.Find(env.Dir)
-	if sErr != nil {
-		return storeFail(env, jsonOn, sErr, "")
-	}
-
-	m, loadErr := s.LoadMilestone(id)
-	if loadErr != nil {
-		if errors.Is(loadErr, store.ErrNotFound) {
-			return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no milestone %q", id))
-		}
-		return fail(env, jsonOn, 1, "error", loadErr.Error())
-	}
-
-	cfg, cfgErr := s.Config()
-	if cfgErr != nil {
-		return fail(env, jsonOn, 1, "error", cfgErr.Error())
-	}
-
-	if hasStatus {
-		newStatus := res.values["status"][len(res.values["status"])-1]
-		if !statusValid(newStatus, cfg) {
-			return fail(env, jsonOn, 2, "usage", fmt.Sprintf("status %q is not valid", newStatus))
-		}
-		m.Status = newStatus
-	}
-
-	if hasTitle {
-		m.Title = res.values["title"][len(res.values["title"])-1]
-	}
-
-	if hasDue {
-		m.Due = res.values["due"][len(res.values["due"])-1]
-	}
-
-	if saveErr := s.SaveMilestone(m); saveErr != nil {
-		return fail(env, jsonOn, 1, "error", saveErr.Error())
-	}
-
-	if jsonOn {
-		return successJSON(env, milestoneToJSON(m))
-	}
-	fmt.Fprintf(env.Stdout, "%s\n", id)
-	return 0
-}
-
-func milestoneToJSON(m model.Milestone) map[string]any {
-	return map[string]any{
-		"id":     m.ID,
-		"title":  m.Title,
-		"status": m.Status,
-		"due":    m.Due,
-	}
-}
-
-func validateTag(t string, cfg model.Config) string {
-	if t == "" {
-		return "tag must not be empty"
-	}
-	if strings.ContainsAny(t, " ,[]") {
-		return fmt.Sprintf("tag %q contains an invalid character", t)
-	}
-	if before, _, ok := strings.Cut(t, ":"); ok {
-		group := before
-		found := slices.Contains(cfg.TagGroups, group)
-		if !found {
-			return fmt.Sprintf("tag group %q is not in the config", group)
-		}
-	}
-	return ""
-}
-
-// validateEditTag checks one edit --tag value. A removal only needs a tag, so one whose group has left the config
-// can still be removed.
-func validateEditTag(e string, cfg model.Config) string {
-	if tag, ok := strings.CutPrefix(e, "-"); ok {
-		if tag == "" {
-			return "tag operation has an empty tag"
-		}
-		return ""
-	}
-	return validateTag(strings.TrimPrefix(e, "+"), cfg)
-}
-
-func applyTagEdits(existing []string, edits []string) []string {
-	result := make([]string, len(existing))
-	copy(result, existing)
-	for _, e := range edits {
-		if strings.HasPrefix(e, "-") {
-			tag := e[1:]
-			out := make([]string, 0, len(result))
-			for _, t := range result {
-				if t != tag {
-					out = append(out, t)
-				}
-			}
-			result = out
-		} else {
-			tag := strings.TrimPrefix(e, "+")
-			found := slices.Contains(result, tag)
-			if !found {
-				result = append(result, tag)
-			}
-		}
-	}
-	return result
-}
-
-func tagsMatch(issueTags, filters []string) bool {
-	if len(filters) == 0 {
-		return true
-	}
-	for _, f := range filters {
-		found := slices.Contains(issueTags, f)
-		if !found {
-			return false
-		}
-	}
-	return true
-}
-
-func validateDate(d string) string {
-	if _, err := time.Parse("2006-01-02", d); err != nil {
-		return fmt.Sprintf("invalid date %q", d)
-	}
-	return ""
-}
-
-func statusValid(status string, cfg model.Config) bool {
-	return slices.Contains(cfg.Statuses, status)
-}
-
-func requireActor(env Env, res *parseResult) (string, string) {
-	as := ""
-	if vals, ok := res.values["as"]; ok {
-		as = vals[len(vals)-1]
-	}
-	if as == "" && env.Getenv != nil {
-		as = env.Getenv("CAIRN_ACTOR")
+// actor is --as, or else the actorEnv environment variable. It is a usage error when both are empty.
+func (c *call) actor() (string, error) {
+	as := c.value(flagAs)
+	if as == "" && c.env.Getenv != nil {
+		as = c.env.Getenv(actorEnv)
 	}
 	if as == "" {
-		return "", "no actor: use --as or set CAIRN_ACTOR"
+		return "", usageError("no actor: use --as or set " + actorEnv)
 	}
-	return as, ""
+	return as, nil
 }
 
-// lastValue is the last value given for a flag, or "" when it was not given.
-func lastValue(res *parseResult, name string) string {
-	if vals := res.values[name]; len(vals) > 0 {
-		return vals[len(vals)-1]
-	}
-	return ""
+// warn adds a warning, which Run prints when the command succeeds.
+func (c *call) warn(msg string) {
+	c.warnings = append(c.warnings, msg)
 }
 
-func issueToJSON(i model.Issue) map[string]any {
-	return issueToJSONMap(i, true)
-}
-
-func issueToJSONMap(i model.Issue, withBody bool) map[string]any {
-	tags := i.Tags
-	if tags == nil {
-		tags = []string{}
-	}
-	m := map[string]any{
-		"id":        i.ID,
-		"title":     i.Title,
-		"status":    i.Status,
-		"tags":      tags,
-		"milestone": i.Milestone,
-		"due":       i.Due,
-		"by":        i.By,
-		"persona":   i.Persona,
-		"model":     i.Model,
-		"created":   model.FormatTime(i.Created),
-		"updated":   model.FormatTime(i.Updated),
-		"github":    i.GitHub,
-	}
-	if withBody {
-		m["body"] = i.Body
-	}
-	return m
-}
-
-func commentToJSON(c model.Comment) map[string]any {
-	m := map[string]any{
-		"id":      c.ID,
-		"kind":    c.Kind,
-		"by":      c.By,
-		"persona": c.Persona,
-		"model":   c.Model,
-		"at":      model.FormatTime(c.At),
-		"source":  c.Source,
-		"body":    c.Body,
-	}
-	if c.RetractedBy != "" {
-		m["retracted"] = map[string]any{
-			"by":           c.RetractedBy,
-			"at":           model.FormatTime(c.RetractedAt),
-			"reason":       c.RetractedReason,
-			"disproved_by": c.DisprovedBy,
-		}
-	} else {
-		m["retracted"] = nil
-	}
-	return m
-}
-
-func commentsToJSON(cs []model.Comment) []map[string]any {
-	if cs == nil {
-		return []map[string]any{}
-	}
-	result := make([]map[string]any, len(cs))
-	for i, c := range cs {
-		result[i] = commentToJSON(c)
-	}
-	return result
-}
-
-func successJSON(env Env, data any) int {
-	writeJSON(env.Stdout, struct {
-		OK   bool `json:"ok"`
-		Data any  `json:"data"`
-	}{OK: true, Data: data})
-	return 0
-}
-
-func fail(env Env, jsonOn bool, exitCode int, code, message string) int {
+// print writes out to stdout: its data in the success envelope with --json, else its text.
+func (c *call) print(out output, jsonOn bool) error {
 	if jsonOn {
-		writeJSON(env.Stdout, struct {
-			OK    bool      `json:"ok"`
-			Error errorBody `json:"error"`
-		}{OK: false, Error: errorBody{Code: code, Message: message}})
+		return json.NewEncoder(c.env.Stdout).Encode(successJSON{OK: true, Data: out.data})
 	}
-	fmt.Fprintf(env.Stderr, "cairn: %s\n", message)
-	return exitCode
+	_, err := io.WriteString(c.env.Stdout, out.text)
+	return err
 }
 
-// storeFail maps a store error to its exit and error codes. issueID names the issue in a not-found message.
-func storeFail(env Env, jsonOn bool, err error, issueID string) int {
+// fail reports err as the package doc describes and returns its exit code.
+func (c *call) fail(err error, jsonOn bool) int {
+	f := failureOf(err)
+	if jsonOn {
+		// Stdout has already failed if this does; the message still goes to stderr.
+		_ = json.NewEncoder(c.env.Stdout).Encode(failureJSON{Error: errorJSON{Code: f.code, Message: f.msg}})
+	}
+	fmt.Fprintln(c.env.Stderr, messagePrefix+f.msg)
+	return f.exit
+}
+
+// Exit codes, as the package doc gives them.
+const (
+	ExitOK       = 0
+	ExitError    = 1
+	ExitUsage    = 2
+	ExitNotFound = 4
+)
+
+// Error codes.
+const (
+	codeError     = "error"
+	codeUsage     = "usage"
+	codeNotFound  = "not_found"
+	codeExists    = "exists"
+	codeNoTracker = "no_tracker"
+)
+
+// failure is an error with its exit code and error code.
+type failure struct {
+	exit int
+	code string
+	msg  string
+}
+
+func (f *failure) Error() string { return f.msg }
+
+func usageError(msg string) error    { return &failure{ExitUsage, codeUsage, msg} }
+func notFoundError(msg string) error { return &failure{ExitNotFound, codeNotFound, msg} }
+func existsError(msg string) error   { return &failure{ExitError, codeExists, msg} }
+
+// noIssue turns store.ErrNotFound into the not_found failure for issueID, and returns any other error as it is.
+func noIssue(err error, issueID string) error {
+	if errors.Is(err, store.ErrNotFound) {
+		return notFoundError(fmt.Sprintf("no issue %q", issueID))
+	}
+	return err
+}
+
+// noComment is the not_found failure for a comment that issueID does not have.
+func noComment(commentID, issueID string) error {
+	return notFoundError(fmt.Sprintf("no comment %q on issue %q", commentID, issueID))
+}
+
+// failureOf is err as a failure: itself when it is one, no_tracker or exists for those store errors, else "error".
+func failureOf(err error) *failure {
+	var f *failure
 	switch {
+	case errors.As(err, &f):
+		return f
 	case errors.Is(err, store.ErrNoTracker):
-		return fail(env, jsonOn, 1, "no_tracker", "no .cairn folder here or above")
-	case errors.Is(err, store.ErrNotFound):
-		return fail(env, jsonOn, 4, "not_found", fmt.Sprintf("no issue %q", issueID))
-	default:
-		return fail(env, jsonOn, 1, "error", err.Error())
+		return &failure{ExitError, codeNoTracker, "no " + store.DirName + " folder here or above"}
+	case errors.Is(err, store.ErrExists):
+		return &failure{ExitError, codeExists, err.Error()}
 	}
-}
-
-type errorBody struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-func writeJSON(w io.Writer, v any) {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return
-	}
-	w.Write(data)
-	w.Write([]byte("\n"))
+	return &failure{ExitError, codeError, err.Error()}
 }
