@@ -78,7 +78,7 @@ statuses: [backlog, open, in-progress, done]
 tag_groups: [severity, effort, area]
 github_repo: owner/name
 embeddings_url: http://127.0.0.1:8080/v1/embeddings
-dupe_text: 0.6
+retracted_match: 0.6
 commit: false
 ---
 ```
@@ -101,7 +101,7 @@ absent. `commit` is `true` or `false`.
 | Add | `cairn new "title" [--body text] [--tag t]... [--milestone m] [--due d]` |
 | Edit | `cairn edit <id> [--title t] [--body text] [--status s] [--tag +t] [--tag -t] [--milestone m] [--due d]` |
 | Delete | `cairn rm <id>` |
-| Read | `cairn show <id> [--all] [--branches]` |
+| Read | `cairn show <id> [--retracted] [--branches]` |
 | Comment | `cairn comment <id> --kind evidence\|decision\|result [--source s] "text"` |
 | Retract | `cairn retract <id> <comment> --reason "…" [--disproved-by <comment>]` |
 | Purge | `cairn purge <id> <comment>` |
@@ -138,9 +138,10 @@ An agent with only the binary learns these from `cairn help`:
   - `decision` holds the owner's words, quoted;
   - `result` is what was done: a PR, a commit or test output.
 - `retract` keeps the comment where it is and adds the retracted fields.
-- `show`, `ls` and `--json` leave retracted comments out. `--all` includes them, marked.
-- A new comment whose word-overlap score (below) with a retracted comment on the same issue reaches `dupe_text` is still
-  added, with a warning that names the retracted comment and its reason.
+- `show` leaves retracted comments out, in text and in `--json`. `show --retracted` includes them, marked.
+- A new comment whose word-overlap score (below) with a retracted comment on the same issue reaches `retracted_match`
+  is still added, with a warning that names the retracted comment and its reason. With `--json` its data lists them
+  as `retracted_matches`.
 - `purge` deletes the comment file, for mistakes such as a pasted secret. Git history still holds it.
 
 ## Search

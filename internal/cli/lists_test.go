@@ -227,7 +227,7 @@ func TestSearchUsage(t *testing.T) {
 		{"search", "  ", "..."},
 		{"search", "--meaning", "row"},
 		{"search", "row", "--branches"},
-		{"search", "row", "--all"},
+		{"search", "row", "--retracted"},
 	} {
 		tr.wantError(2, "usage", args...)
 	}

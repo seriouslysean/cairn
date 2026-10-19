@@ -184,6 +184,32 @@ Read-only context:
 - internal/cli/commit_test.go
 - internal/model/model_test.go
 
+## Step 9: clearer names
+Three names said less than they meant, so they change, with no alias for the old ones:
+- `show --all` is `show --retracted`: it adds the retracted comments. That leaves `--all` free for step 10 to mean
+  every row.
+- The config key `dupe_text` is `retracted_match`: the overlap score at which a new comment warns that it matches a
+  retracted one. A config that still has `dupe_text` keeps the line as an unknown key, and `retracted_match` takes its
+  default.
+- `comment --json` lists those matches as `data.retracted_matches`, not `data.warnings`, so the name is no longer
+  shared with the envelope's `warnings`.
+
+The spec said `ls` leaves retracted comments out, but `ls` never prints comments, so that line now names `show` only.
+The contract is the package comment in `internal/cli/cli.go`.
+
+Drafter edits:
+- internal/cli/cli.go
+- internal/cli/comments.go
+- internal/cli/help.go
+- internal/cli/issues.go
+- internal/cli/json.go
+- internal/model/model.go
+
+Read-only context:
+- docs/spec.md
+- internal/cli/comment_test.go
+- internal/model/model_test.go
+
 ## Step 10: default limits
 `ls` and `search` print at most 30 rows unless given `--limit N` or `--all`, which step 9 left free to mean every row.
 `--limit` takes a whole number of 1 or more, and anything else is a usage error, as is `--limit` with `--all`. `ls`
@@ -191,10 +217,10 @@ keeps its last 30 rows: the newest issues, and with `--branches` the branches' r
 keeps its 30 best matches. The cut comes after filtering and sorting.
 
 When rows are left out, the command warns `30 of 672 shown; --limit N or --all for more`, the same with or without a
-terminal. With `--json` the envelope gains `"total"` on every `ls` and `search`: how many rows there were
-before the cut, whether or not any were cut. There are no pages: an agent narrows with a filter or a better query.
-`show`, `tags` and `milestones` don't change. The spec's Commands table and `--json` line change with it, and the
-contract is the package comment in `internal/cli/cli.go`.
+terminal. With `--json` the envelope gains `"total"` on every `ls` and `search`: how many rows there were before the
+cut, whether or not any were cut. There are no pages: an agent narrows with a filter or a better query. `show`, `tags`
+and `milestones` don't change. The spec's Commands table and `--json` line change with it, and the contract is the
+package comment in `internal/cli/cli.go`.
 
 It comes before `pull`, which brings in issues by the hundred. Reading isn't the problem: at 10,000 issues `ls` takes
 under 0.4 s and `search` about 1 s. Output is: there, `ls --json` prints 2.7 MB, and a tracker of 672 issues already

@@ -271,14 +271,27 @@ func TestConfigDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Config{Statuses: []string{"backlog", "open", "in-progress", "done"},
-		TagGroups: []string{"severity", "effort", "area"}, DupeText: 0.6}
+		TagGroups: []string{"severity", "effort", "area"}, RetractedMatch: 0.6}
 	if !reflect.DeepEqual(c, want) || !reflect.DeepEqual(DefaultConfig(), want) {
 		t.Fatalf("got %+v", c)
 	}
 	wantFile := "---\nstatuses: [backlog, open, in-progress, done]\ntag_groups: [severity, effort, area]\n" +
-		"dupe_text: 0.6\n---\n"
+		"retracted_match: 0.6\n---\n"
 	if out := join(t, c.Fields(), ""); out != wantFile {
 		t.Fatalf("got\n%s", out)
+	}
+}
+
+// dupe_text is retracted_match since step 9. A config that still has the old name keeps the line as an unknown key,
+// and retracted_match takes its default.
+func TestConfigDupeTextIsUnknown(t *testing.T) {
+	f, _ := split(t, "---\ndupe_text: 0.9\n---\n")
+	c, err := ParseConfig(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RetractedMatch != 0.6 || len(c.Extra) != 1 || c.Extra[0].Key != "dupe_text" || c.Extra[0].Value != "0.9" {
+		t.Fatalf("retracted_match %v, extra %+v", c.RetractedMatch, c.Extra)
 	}
 }
 
@@ -293,24 +306,24 @@ func TestConfigDupeMeaningIsUnknown(t *testing.T) {
 		t.Fatalf("extra: %+v", c.Extra)
 	}
 	want := "---\nstatuses: [backlog, open, in-progress, done]\ntag_groups: [severity, effort, area]\n" +
-		"dupe_text: 0.6\ndupe_meaning: 0.85\n---\n"
+		"retracted_match: 0.6\ndupe_meaning: 0.85\n---\n"
 	if out := join(t, c.Fields(), ""); out != want {
 		t.Fatalf("got\n%s", out)
 	}
 }
 
 func TestConfigOverrides(t *testing.T) {
-	src := "---\nstatuses: [todo, done]\ngithub_repo: owner/name\ndupe_text: 0.7\n---\n"
+	src := "---\nstatuses: [todo, done]\ngithub_repo: owner/name\nretracted_match: 0.7\n---\n"
 	f, _ := split(t, src)
 	c, err := ParseConfig(f)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(c.Statuses, []string{"todo", "done"}) || c.GitHubRepo != "owner/name" ||
-		c.DupeText != 0.7 || len(c.TagGroups) != 3 || c.EmbeddingsURL != "" {
+		c.RetractedMatch != 0.7 || len(c.TagGroups) != 3 || c.EmbeddingsURL != "" {
 		t.Fatalf("got %+v", c)
 	}
-	for _, bad := range []string{"---\ndupe_text: high\n---\n", "---\nstatuses: open\n---\n"} {
+	for _, bad := range []string{"---\nretracted_match: high\n---\n", "---\nstatuses: open\n---\n"} {
 		f, _ := split(t, bad)
 		if _, err := ParseConfig(f); err == nil {
 			t.Errorf("want an error for %q", bad)
@@ -334,7 +347,7 @@ func TestConfigCommit(t *testing.T) {
 	on := DefaultConfig()
 	on.Commit = true
 	wantFile := "---\nstatuses: [backlog, open, in-progress, done]\ntag_groups: [severity, effort, area]\n" +
-		"dupe_text: 0.6\ncommit: true\n---\n"
+		"retracted_match: 0.6\ncommit: true\n---\n"
 	if out := join(t, on.Fields(), ""); out != wantFile {
 		t.Fatalf("got\n%s", out)
 	}

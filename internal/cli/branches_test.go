@@ -218,7 +218,7 @@ func (tr *tracker) printed(branch string, args ...string) string {
 
 func TestShowBranches(t *testing.T) {
 	tr, a, b := showTracker(t)
-	for _, all := range [][]string{nil, {"--all"}} {
+	for _, all := range [][]string{nil, {"--retracted"}} {
 		args := append([]string{"show", a}, all...)
 		want := tr.printed("main", args[1:]...) + "\n=== branch feat-a ===\n" + tr.printed("feat-a", args[1:]...) +
 			"\n=== branch talk ===\n" + tr.printed("talk", args[1:]...)
@@ -276,10 +276,10 @@ func TestShowBranchesJSON(t *testing.T) {
 		t.Fatalf("got  %v\nwant %v", got, want)
 	}
 	if got := versions(a); len(got[1]["comments"].([]any)) != 1 {
-		t.Fatalf("the retracted comment is left out without --all: %v", got[1]["comments"])
+		t.Fatalf("the retracted comment is left out without --retracted: %v", got[1]["comments"])
 	}
-	if got := versions(a, "--all"); len(got[1]["comments"].([]any)) != 2 {
-		t.Fatalf("--all keeps it: %v", got[1]["comments"])
+	if got := versions(a, "--retracted"); len(got[1]["comments"].([]any)) != 2 {
+		t.Fatalf("--retracted keeps it: %v", got[1]["comments"])
 	}
 	// One version is still a list.
 	if got := versions(b); !reflect.DeepEqual(got, []map[string]any{tr.showData("feat-a", "feat-a", b)}) {

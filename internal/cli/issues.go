@@ -214,9 +214,9 @@ func showBranches(c *call, s *store.Store, issueID string) (output, error) {
 	return output{data, text.String()}, nil
 }
 
-// visible is the comments show prints: the active ones, or all of them with --all.
+// visible is the comments show prints: the active ones, or all of them with --retracted.
 func (c *call) visible(comments []model.Comment) []model.Comment {
-	if c.switches[flagAll] {
+	if c.switches[flagRetracted] {
 		return comments
 	}
 	return slices.DeleteFunc(comments, model.Comment.Retracted)
