@@ -46,11 +46,17 @@ func (c *call) commit(command string) {
 	actor, _ := c.actor() // the write has checked it
 	msg := fmt.Sprintf("%s%s %s (by %s)", commitPrefix, command, w.id, actor)
 	g := gitRepo{dir: w.store.Dir}
-	if _, err := g.run("add", "-A", "--", w.path); err != nil {
-		c.warn(notCommittedPrefix + err.Error())
-		return
+	_, err = g.run("add", "-A", "--", w.path)
+	if err == nil {
+		_, err = g.run("commit", "-m", msg, "--", w.path)
 	}
-	if _, err := g.run("commit", "-m", msg, "--", w.path); err != nil {
+	if err != nil && !g.clean(w.path) {
 		c.warn(notCommittedPrefix + err.Error())
 	}
+}
+
+// clean reports whether git status shows nothing to commit at p.
+func (g gitRepo) clean(p string) bool {
+	out, err := g.run("status", "--porcelain", "--", p)
+	return err == nil && len(out) == 0
 }
