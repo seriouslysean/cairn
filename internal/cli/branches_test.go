@@ -391,3 +391,70 @@ func TestBranchesRemovedIssue(t *testing.T) {
 		t.Fatalf("exit %d, %q", code, out)
 	}
 }
+
+// A tag named like a branch, or like the default branch, changes nothing: Cairn names every branch to git by its full
+// ref. Here the tag feat points at main, which has no f, and the tag main points at feat, which would make feat look
+// merged.
+func TestBranchesTagNamedLikeABranch(t *testing.T) {
+	tr := gitTracker(t, "main", ".")
+	tr.git("switch", "-q", "-c", "feat")
+	f := tr.issue("new", "On feat").ID
+	tr.commit(t0.Add(-time.Hour), "f")
+	tr.git("switch", "-q", "main")
+	tr.git("tag", "feat", "refs/heads/main")
+	tr.git("tag", "main", "refs/heads/feat")
+	code, out, errOut := tr.run("ls", "--branches")
+	if code != 0 || out != f+"\tbacklog\tOn feat\tfeat\n" || errOut != "" {
+		t.Fatalf("ls: exit %d, %q, %q", code, out, errOut)
+	}
+	want := "=== branch feat ===\n" + tr.printed("feat", f)
+	if code, out, errOut = tr.run("show", f, "--branches"); code != 0 || out != want || errOut != "" {
+		t.Fatalf("show: exit %d, %q\ngot\n%s\nwant\n%s", code, errOut, out, want)
+	}
+}
+
+// A branch with no history in common with the default branch (gh-pages, say) has nothing to compare, so it is not
+// active, even when it has a tracker of its own. It does not stop the list.
+func TestBranchesUnrelatedHistory(t *testing.T) {
+	tr := gitTracker(t, "main", ".")
+	a := tr.issue("new", "On main").ID
+	tr.commit(t0.Add(-47*time.Hour), "a")
+	tr.git("switch", "-q", "--orphan", "pages")
+	// The empty issues and milestones folders are not in git, so the switch leaves them. Start from nothing.
+	if err := os.RemoveAll(filepath.Join(tr.dir, ".cairn")); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := tr.run("init"); code != 0 {
+		t.Fatalf("init: exit %d, %s", code, errOut)
+	}
+	tr.issue("new", "On pages")
+	tr.commit(t0.Add(-time.Hour), "pages")
+	tr.git("switch", "-q", "main")
+	if code, out, errOut := tr.run("ls", "--branches"); code != 0 || out != a+"\tbacklog\tOn main\n" || errOut != "" {
+		t.Fatalf("exit %d, %q, %q", code, out, errOut)
+	}
+}
+
+// Warnings are printed only when the command succeeds. A command that fails prints its message alone, on one line,
+// even when a branch gave a warning on the way: here show reads the broken issue on bad, warns, and then finds no
+// version of it.
+func TestBranchesWarningsOnlyOnSuccess(t *testing.T) {
+	tr := gitTracker(t, "main", ".")
+	tr.git("switch", "-q", "-c", "bad")
+	broken := tr.issue("new", "Broken").ID
+	path := filepath.Join(tr.dir, ".cairn", "issues", broken, "issue.md")
+	if err := os.WriteFile(path, []byte("nope"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr.commit(t0.Add(-time.Hour), "bad")
+	tr.git("switch", "-q", "main")
+	// The broken branch does give a warning.
+	if code, _, errOut := tr.run("ls", "--branches"); code != 0 || !strings.HasPrefix(errOut, "cairn: warning: ") {
+		t.Fatalf("ls: exit %d, %q", code, errOut)
+	}
+	if code, out, errOut := tr.run("show", broken, "--branches"); code != 4 || out != "" ||
+		errOut != "cairn: no issue \""+broken+"\"\n" {
+		t.Fatalf("show: exit %d, %q, %q", code, out, errOut)
+	}
+	tr.wantError(4, "not_found", "show", broken, "--branches")
+}
