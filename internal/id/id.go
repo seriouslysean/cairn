@@ -3,7 +3,7 @@ package id
 
 import (
 	"crypto/rand"
-	"errors"
+	"fmt"
 	"io"
 	"strings"
 )
@@ -19,6 +19,14 @@ const (
 	maxLength     = 8
 	commentLength = 4
 	maxTries      = 100
+	alphabetMask  = byte(len(Alphabet) - 1) // Alphabet has 32 characters, so b&alphabetMask picks one evenly
+)
+
+// Length's thresholds: a tracker with fewer than shortBelow issues gets ids of minLength characters, one with fewer
+// than mediumBelow gets one more, and a larger one gets two more.
+const (
+	shortBelow  = 1000
+	mediumBelow = 32000
 )
 
 // New returns an id of n characters (4 to 8) that is not in taken. Each character is Alphabet[b&31] for the next
@@ -26,7 +34,7 @@ const (
 // when n is out of range, when r fails or runs out, or when every candidate is taken.
 func New(n int, taken map[string]bool, r io.Reader) (string, error) {
 	if n < minLength || n > maxLength {
-		return "", errors.New("id: length must be 4 to 8")
+		return "", fmt.Errorf("id: length must be %d to %d", minLength, maxLength)
 	}
 	if r == nil {
 		r = rand.Reader
@@ -37,13 +45,13 @@ func New(n int, taken map[string]bool, r io.Reader) (string, error) {
 			return "", err
 		}
 		for i, b := range buf {
-			buf[i] = Alphabet[b&31]
+			buf[i] = Alphabet[b&alphabetMask]
 		}
 		if s := string(buf); !taken[s] {
 			return s, nil
 		}
 	}
-	return "", errors.New("id: no free id after 100 tries")
+	return "", fmt.Errorf("id: no free id after %d tries", maxTries)
 }
 
 // NewComment returns a comment id that is not in taken, a set of comment ids. It draws from r as New does.
@@ -74,12 +82,12 @@ func ValidComment(s string) bool {
 // from there on.
 func Length(count int) int {
 	switch {
-	case count < 1000:
-		return 4
-	case count < 32000:
-		return 5
+	case count < shortBelow:
+		return minLength
+	case count < mediumBelow:
+		return minLength + 1
 	}
-	return 6
+	return minLength + 2
 }
 
 // inAlphabet reports whether every character of s is in Alphabet.

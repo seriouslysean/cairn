@@ -237,7 +237,7 @@ const (
 )
 
 // errNoStatuses is the error for a config that lists no statuses, which leaves new issues and milestones none.
-var errNoStatuses = errors.New("config.yml lists no statuses")
+var errNoStatuses = errors.New(store.ConfigFile + " lists no statuses")
 
 // firstStatus is the status a new issue or milestone starts with.
 func firstStatus(cfg model.Config) (string, error) {
@@ -294,7 +294,7 @@ func editTags(tags, edits []string) []string {
 
 // checkIssueMilestone checks the milestone an issue names, which need not have a file yet.
 func checkIssueMilestone(m string) error {
-	if strings.Contains(m, "/") {
+	if !model.ValidMilestoneName(m) {
 		return usageError(`milestone must not contain "/"`)
 	}
 	return nil

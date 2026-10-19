@@ -38,6 +38,34 @@ const (
 	KindResult   = "result"
 )
 
+// The frontmatter keys of every file type.
+const (
+	keyID              = "id"
+	keyTitle           = "title"
+	keyStatus          = "status"
+	keyTags            = "tags"
+	keyMilestone       = "milestone"
+	keyDue             = "due"
+	keyBy              = "by"
+	keyPersona         = "persona"
+	keyModel           = "model"
+	keyCreated         = "created"
+	keyUpdated         = "updated"
+	keyGitHub          = "github"
+	keyKind            = "kind"
+	keyAt              = "at"
+	keySource          = "source"
+	keyRetractedBy     = "retracted_by"
+	keyRetractedAt     = "retracted_at"
+	keyRetractedReason = "retracted_reason"
+	keyDisprovedBy     = "disproved_by"
+	keyStatuses        = "statuses"
+	keyTagGroups       = "tag_groups"
+	keyGitHubRepo      = "github_repo"
+	keyEmbeddingsURL   = "embeddings_url"
+	keyDupeText        = "dupe_text"
+)
+
 // Issue is the issue.md file of an issue folder. Required keys: id, title, status, created, updated. The others are
 // left out of the file when empty (GitHub when 0).
 type Issue struct {
@@ -80,6 +108,12 @@ func (c Comment) Retracted() bool {
 	return c.RetractedBy != ""
 }
 
+// ValidMilestoneName reports whether s has no "/". Every milestone id, and the milestone an issue names, must pass:
+// a milestone's id is its file name.
+func ValidMilestoneName(s string) bool {
+	return !strings.Contains(s, "/")
+}
+
 // Milestone is one file in milestones/. Its id is its file name without ".md" and is any non-empty name without "/"
 // (for example "v0.4"). Required keys: id, title, status. Due is left out of the file when empty.
 type Milestone struct {
@@ -116,21 +150,21 @@ func DefaultConfig() Config {
 func ParseIssue(fields []doc.Field, body []byte) (Issue, error) {
 	r := newReader(fields)
 	i := Issue{
-		ID:        r.text("id"),
-		Title:     r.text("title"),
-		Status:    r.text("status"),
-		Tags:      r.list("tags", nil),
-		Milestone: r.text("milestone"),
-		Due:       r.date("due"),
-		By:        r.text("by"),
-		Persona:   r.text("persona"),
-		Model:     r.text("model"),
-		Created:   r.time("created"),
-		Updated:   r.time("updated"),
-		GitHub:    r.number("github"),
+		ID:        r.text(keyID),
+		Title:     r.text(keyTitle),
+		Status:    r.text(keyStatus),
+		Tags:      r.list(keyTags, nil),
+		Milestone: r.text(keyMilestone),
+		Due:       r.date(keyDue),
+		By:        r.text(keyBy),
+		Persona:   r.text(keyPersona),
+		Model:     r.text(keyModel),
+		Created:   r.time(keyCreated),
+		Updated:   r.time(keyUpdated),
+		GitHub:    r.number(keyGitHub),
 		Body:      string(body),
 	}
-	if err := r.done("id", "title", "status", "created", "updated"); err != nil {
+	if err := r.done(keyID, keyTitle, keyStatus, keyCreated, keyUpdated); err != nil {
 		return Issue{}, err
 	}
 	if !id.Valid(i.ID) {
@@ -144,18 +178,18 @@ func ParseIssue(fields []doc.Field, body []byte) (Issue, error) {
 // created, updated, github, then Extra.
 func (i Issue) Fields() []doc.Field {
 	var w writer
-	w.text("id", i.ID)
-	w.text("title", i.Title)
-	w.text("status", i.Status)
-	w.optList("tags", i.Tags)
-	w.optText("milestone", i.Milestone)
-	w.optText("due", i.Due)
-	w.optText("by", i.By)
-	w.optText("persona", i.Persona)
-	w.optText("model", i.Model)
-	w.time("created", i.Created)
-	w.time("updated", i.Updated)
-	w.optNumber("github", i.GitHub)
+	w.text(keyID, i.ID)
+	w.text(keyTitle, i.Title)
+	w.text(keyStatus, i.Status)
+	w.optList(keyTags, i.Tags)
+	w.optText(keyMilestone, i.Milestone)
+	w.optText(keyDue, i.Due)
+	w.optText(keyBy, i.By)
+	w.optText(keyPersona, i.Persona)
+	w.optText(keyModel, i.Model)
+	w.time(keyCreated, i.Created)
+	w.time(keyUpdated, i.Updated)
+	w.optNumber(keyGitHub, i.GitHub)
 	return w.with(i.Extra)
 }
 
@@ -164,20 +198,20 @@ func (i Issue) Fields() []doc.Field {
 func ParseComment(fields []doc.Field, body []byte) (Comment, error) {
 	r := newReader(fields)
 	c := Comment{
-		ID:              r.text("id"),
-		Kind:            r.text("kind"),
-		By:              r.text("by"),
-		Persona:         r.text("persona"),
-		Model:           r.text("model"),
-		At:              r.time("at"),
-		Source:          r.text("source"),
-		RetractedBy:     r.text("retracted_by"),
-		RetractedAt:     r.time("retracted_at"),
-		RetractedReason: r.text("retracted_reason"),
-		DisprovedBy:     r.text("disproved_by"),
+		ID:              r.text(keyID),
+		Kind:            r.text(keyKind),
+		By:              r.text(keyBy),
+		Persona:         r.text(keyPersona),
+		Model:           r.text(keyModel),
+		At:              r.time(keyAt),
+		Source:          r.text(keySource),
+		RetractedBy:     r.text(keyRetractedBy),
+		RetractedAt:     r.time(keyRetractedAt),
+		RetractedReason: r.text(keyRetractedReason),
+		DisprovedBy:     r.text(keyDisprovedBy),
 		Body:            string(body),
 	}
-	if err := r.done("id", "kind", "by", "at"); err != nil {
+	if err := r.done(keyID, keyKind, keyBy, keyAt); err != nil {
 		return Comment{}, err
 	}
 	if !id.ValidComment(c.ID) {
@@ -194,17 +228,17 @@ func ParseComment(fields []doc.Field, body []byte) (Comment, error) {
 // retracted_at, retracted_reason, disproved_by, then Extra.
 func (c Comment) Fields() []doc.Field {
 	var w writer
-	w.text("id", c.ID)
-	w.text("kind", c.Kind)
-	w.text("by", c.By)
-	w.optText("persona", c.Persona)
-	w.optText("model", c.Model)
-	w.time("at", c.At)
-	w.optText("source", c.Source)
-	w.optText("retracted_by", c.RetractedBy)
-	w.optTime("retracted_at", c.RetractedAt)
-	w.optText("retracted_reason", c.RetractedReason)
-	w.optText("disproved_by", c.DisprovedBy)
+	w.text(keyID, c.ID)
+	w.text(keyKind, c.Kind)
+	w.text(keyBy, c.By)
+	w.optText(keyPersona, c.Persona)
+	w.optText(keyModel, c.Model)
+	w.time(keyAt, c.At)
+	w.optText(keySource, c.Source)
+	w.optText(keyRetractedBy, c.RetractedBy)
+	w.optTime(keyRetractedAt, c.RetractedAt)
+	w.optText(keyRetractedReason, c.RetractedReason)
+	w.optText(keyDisprovedBy, c.DisprovedBy)
 	return w.with(c.Extra)
 }
 
@@ -212,16 +246,16 @@ func (c Comment) Fields() []doc.Field {
 func ParseMilestone(fields []doc.Field, body []byte) (Milestone, error) {
 	r := newReader(fields)
 	m := Milestone{
-		ID:     r.text("id"),
-		Title:  r.text("title"),
-		Status: r.text("status"),
-		Due:    r.date("due"),
+		ID:     r.text(keyID),
+		Title:  r.text(keyTitle),
+		Status: r.text(keyStatus),
+		Due:    r.date(keyDue),
 		Body:   string(body),
 	}
-	if err := r.done("id", "title", "status"); err != nil {
+	if err := r.done(keyID, keyTitle, keyStatus); err != nil {
 		return Milestone{}, err
 	}
-	if strings.Contains(m.ID, "/") {
+	if !ValidMilestoneName(m.ID) {
 		return Milestone{}, fmt.Errorf("model: milestone id %q must not contain \"/\"", m.ID)
 	}
 	m.Extra = r.extra()
@@ -231,10 +265,10 @@ func ParseMilestone(fields []doc.Field, body []byte) (Milestone, error) {
 // Fields returns the milestone's frontmatter in the order id, title, status, due, then Extra.
 func (m Milestone) Fields() []doc.Field {
 	var w writer
-	w.text("id", m.ID)
-	w.text("title", m.Title)
-	w.text("status", m.Status)
-	w.optText("due", m.Due)
+	w.text(keyID, m.ID)
+	w.text(keyTitle, m.Title)
+	w.text(keyStatus, m.Status)
+	w.optText(keyDue, m.Due)
 	return w.with(m.Extra)
 }
 
@@ -244,11 +278,11 @@ func ParseConfig(fields []doc.Field) (Config, error) {
 	def := DefaultConfig()
 	r := newReader(fields)
 	c := Config{
-		Statuses:      r.list("statuses", def.Statuses),
-		TagGroups:     r.list("tag_groups", def.TagGroups),
-		GitHubRepo:    r.text("github_repo"),
-		EmbeddingsURL: r.text("embeddings_url"),
-		DupeText:      r.float("dupe_text", def.DupeText),
+		Statuses:      r.list(keyStatuses, def.Statuses),
+		TagGroups:     r.list(keyTagGroups, def.TagGroups),
+		GitHubRepo:    r.text(keyGitHubRepo),
+		EmbeddingsURL: r.text(keyEmbeddingsURL),
+		DupeText:      r.float(keyDupeText, def.DupeText),
 	}
 	if err := r.done(); err != nil {
 		return Config{}, err
@@ -262,10 +296,10 @@ func ParseConfig(fields []doc.Field) (Config, error) {
 // strconv.FormatFloat(f, 'g', -1, 64).
 func (c Config) Fields() []doc.Field {
 	var w writer
-	w.list("statuses", c.Statuses)
-	w.list("tag_groups", c.TagGroups)
-	w.optText("github_repo", c.GitHubRepo)
-	w.optText("embeddings_url", c.EmbeddingsURL)
-	w.float("dupe_text", c.DupeText)
+	w.list(keyStatuses, c.Statuses)
+	w.list(keyTagGroups, c.TagGroups)
+	w.optText(keyGitHubRepo, c.GitHubRepo)
+	w.optText(keyEmbeddingsURL, c.EmbeddingsURL)
+	w.float(keyDupeText, c.DupeText)
 	return w.with(c.Extra)
 }

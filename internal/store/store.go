@@ -19,15 +19,18 @@ import (
 // DirName is the tracker's folder.
 const DirName = ".cairn"
 
-// The names inside the tracker's folder.
+// ConfigFile is the config's file in the tracker's folder.
+const ConfigFile = "config.yml"
+
+// The other names inside the tracker's folder.
 const (
 	issuesDir     = "issues"
 	milestonesDir = "milestones"
 	issueFile     = "issue.md"
-	configFile    = "config.yml"
 	ignoreFile    = ".gitignore"
 	ignored       = ".index/\n"
 	docExt        = ".md" // issue, comment and milestone files
+	hiddenPrefix  = "."   // starts the names ListMilestones skips, temporary files among them
 )
 
 const (
@@ -88,7 +91,7 @@ func Init(dir string) (*Store, error) {
 			return nil, err
 		}
 	}
-	if err := writeDoc(filepath.Join(s.Dir, configFile), model.DefaultConfig().Fields(), ""); err != nil {
+	if err := writeDoc(filepath.Join(s.Dir, ConfigFile), model.DefaultConfig().Fields(), ""); err != nil {
 		return nil, err
 	}
 	if err := WriteFileAtomic(filepath.Join(s.Dir, ignoreFile), []byte(ignored), filePerm); err != nil {
@@ -99,7 +102,7 @@ func Init(dir string) (*Store, error) {
 
 // Config reads config.yml, or returns model.DefaultConfig when the file is missing.
 func (s *Store) Config() (model.Config, error) {
-	fields, _, err := readDoc(filepath.Join(s.Dir, configFile))
+	fields, _, err := readDoc(filepath.Join(s.Dir, ConfigFile))
 	if errors.Is(err, fs.ErrNotExist) {
 		return model.DefaultConfig(), nil
 	}
@@ -108,7 +111,7 @@ func (s *Store) Config() (model.Config, error) {
 	}
 	c, err := model.ParseConfig(fields)
 	if err != nil {
-		return model.Config{}, fileError(filepath.Join(s.Dir, configFile), err)
+		return model.Config{}, fileError(filepath.Join(s.Dir, ConfigFile), err)
 	}
 	return c, nil
 }
@@ -297,7 +300,7 @@ func (s *Store) ListMilestones() ([]model.Milestone, error) {
 // ValidMilestoneID reports whether id can name a milestone file: it is not empty, has no "/" and does not start with
 // ".", which ListMilestones would skip.
 func ValidMilestoneID(milestoneID string) bool {
-	return milestoneID != "" && !strings.Contains(milestoneID, "/") && !strings.HasPrefix(milestoneID, ".")
+	return milestoneID != "" && model.ValidMilestoneName(milestoneID) && !strings.HasPrefix(milestoneID, hiddenPrefix)
 }
 
 // LoadMilestone reads milestones/<id>.md. It returns ErrNotFound when the file is missing or the id cannot name one

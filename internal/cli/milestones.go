@@ -35,9 +35,9 @@ func runMilestones(c *call) (output, error) {
 		hasFile[m.ID] = true
 		data = append(data, milestoneCountJSON{milestoneData(m), counts[m.ID]})
 	}
-	for id, n := range counts {
-		if !hasFile[id] {
-			data = append(data, milestoneCountJSON{milestoneJSON{ID: id}, n})
+	for milestoneID, n := range counts {
+		if !hasFile[milestoneID] {
+			data = append(data, milestoneCountJSON{milestoneJSON{ID: milestoneID}, n})
 		}
 	}
 	slices.SortFunc(data, compareMilestones)

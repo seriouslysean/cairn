@@ -143,6 +143,12 @@ func (e Env) stamp() time.Time {
 // actorEnv is the environment variable that names the actor when --as is not given.
 const actorEnv = "CAIRN_ACTOR"
 
+// The prefixes of the lines on stderr: a failure's message, and each warning.
+const (
+	messagePrefix = "cairn: "
+	warningPrefix = messagePrefix + "warning: "
+)
+
 // Flag names, without the leading "--".
 const (
 	flagJSON        = "json"
@@ -249,7 +255,7 @@ func Run(args []string, env Env) int {
 		return c.fail(err, jsonOn)
 	}
 	for _, w := range c.warnings {
-		fmt.Fprintf(env.Stderr, "cairn: warning: %s\n", w)
+		fmt.Fprintln(env.Stderr, warningPrefix+w)
 	}
 	return ExitOK
 }
@@ -401,7 +407,7 @@ func (c *call) fail(err error, jsonOn bool) int {
 		// Stdout has already failed if this does; the message still goes to stderr.
 		_ = json.NewEncoder(c.env.Stdout).Encode(failureJSON{Error: errorJSON{Code: f.code, Message: f.msg}})
 	}
-	fmt.Fprintf(c.env.Stderr, "cairn: %s\n", f.msg)
+	fmt.Fprintln(c.env.Stderr, messagePrefix+f.msg)
 	return f.exit
 }
 
