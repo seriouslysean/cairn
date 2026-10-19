@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"math/rand/v2"
+	"os/exec"
 	"path"
 	"strings"
 	"time"
@@ -27,6 +29,7 @@ const (
 // How a git step waits for another writer: up to lockTries tries, with a pause between them drawn from
 // [lockPause/2, lockPause*3/2), so writers that collide do not try again in step.
 const (
+	gitFatal  = 128     // git's exit status for a fatal error, such as a lock it cannot take; a refusing hook gives 1
 	lockExt   = ".lock" // ends the lock file git's error names, in any language: index.lock, or a ref's
 	lockTries = 20
 	lockPause = 50 * time.Millisecond
@@ -65,14 +68,15 @@ func (c *call) commit(command string) {
 	}
 }
 
-// step runs one git step, and tries again while it fails because another writer is in the way: git's error names a
-// lock file, or HEAD moved while the step ran. A commit given paths reads HEAD before it takes the index lock, so a
-// writer that commits in between makes it fail without naming a lock.
+// step runs one git step, and tries again while it fails because another writer is in the way: git exits gitFatal,
+// and either its error names a lock file or HEAD moved while the step ran. A commit given paths reads HEAD before it
+// takes the index lock, so a writer that commits in between makes it fail without naming a lock.
 func (g gitRepo) step(args ...string) error {
 	for try := 1; ; try++ {
 		before := g.head()
 		_, err := g.run(args...)
-		if err == nil || try == lockTries {
+		var exit *exec.ExitError
+		if err == nil || try == lockTries || !errors.As(err, &exit) || exit.ExitCode() != gitFatal {
 			return err
 		}
 		if inTheWay := strings.Contains(err.Error(), lockExt) || g.head() != before; !inTheWay {
