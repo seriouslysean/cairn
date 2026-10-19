@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/seriouslysean/cairn/internal/store"
 )
 
 // writeConfig replaces the tracker's config.yml with text, and leaves the change uncommitted.
@@ -220,6 +222,36 @@ func TestCommitFailureKeepsTheWrite(t *testing.T) {
 	}
 	if st := tr.status(); st != nil {
 		t.Fatalf("left uncommitted: %q", st)
+	}
+}
+
+// A write whose change another writer committed first, between the write and its own commit, has nothing left to
+// commit: git fails, but that is not a warning. Here an edit to a and the removal of b are committed by hand before the
+// commit runs.
+func TestCommitAlreadyCommitted(t *testing.T) {
+	tr := commitTracker(t, "")
+	a := tr.write("new", "a")
+	b := tr.write("new", "b")
+	appendTo(t, filepath.Join(tr.dir, ".cairn", "issues", a, "issue.md"), "Edited by another writer.\n")
+	if err := os.RemoveAll(filepath.Join(tr.dir, ".cairn", "issues", b)); err != nil {
+		t.Fatal(err)
+	}
+	tr.commit(t0, "another writer")
+	before := tr.headCommit()
+	s, err := store.Find(tr.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []struct{ command, id string }{{"edit", a}, {"rm", b}} {
+		c := &call{env: Env{Dir: tr.dir, Getenv: func(k string) string { return tr.env[k] }}}
+		c.wroteIssue(s, w.id)
+		c.commit(w.command)
+		if c.warnings != nil {
+			t.Errorf("%s %s: warnings %q", w.command, w.id, c.warnings)
+		}
+	}
+	if tr.headCommit() != before {
+		t.Fatal("committed again")
 	}
 }
 

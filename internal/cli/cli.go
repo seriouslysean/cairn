@@ -40,7 +40,8 @@
 // the repository's hooks run. Each git step runs once, so two writes at the same moment can collide on git's locks.
 // When git fails (no git, no repository, another writer's lock, a hook), or config.yml cannot be read after a write
 // that did not need it, the write stands and the command still succeeds, with the warning
-// "not committed: <the error>". A write that fails commits nothing, and init never commits.
+// "not committed: <the error>". But when git status then shows nothing left to commit at the path, another writer
+// committed the change first, and there is no warning. A write that fails commits nothing, and init never commits.
 //
 // Commands:
 //   - init: makes .cairn in Env.Dir (it does not look upward). Text: "initialized <the .cairn path>\n". Data:
