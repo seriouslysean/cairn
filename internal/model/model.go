@@ -63,7 +63,7 @@ const (
 	keyTagGroups       = "tag_groups"
 	keyGitHubRepo      = "github_repo"
 	keyEmbeddingsURL   = "embeddings_url"
-	keyDupeText        = "dupe_text"
+	keyRetractedMatch  = "retracted_match"
 	keyCommit          = "commit"
 )
 
@@ -134,22 +134,22 @@ type Milestone struct {
 
 // Config is config.yml: frontmatter only, with an empty body. Every key is optional. Commit turns on commit on write.
 type Config struct {
-	Statuses      []string
-	TagGroups     []string
-	GitHubRepo    string
-	EmbeddingsURL string
-	DupeText      float64
-	Commit        bool
-	Extra         []doc.Field
+	Statuses       []string
+	TagGroups      []string
+	GitHubRepo     string
+	EmbeddingsURL  string
+	RetractedMatch float64
+	Commit         bool
+	Extra          []doc.Field
 }
 
 // DefaultConfig is the config used for absent keys: statuses [backlog, open, in-progress, done], tag groups
-// [severity, effort, area] and dupe_text 0.6, with GitHub sync, embeddings and commit on write off.
+// [severity, effort, area] and retracted_match 0.6, with GitHub sync, embeddings and commit on write off.
 func DefaultConfig() Config {
 	return Config{
-		Statuses:  []string{"backlog", "open", "in-progress", "done"},
-		TagGroups: []string{"severity", "effort", "area"},
-		DupeText:  0.6,
+		Statuses:       []string{"backlog", "open", "in-progress", "done"},
+		TagGroups:      []string{"severity", "effort", "area"},
+		RetractedMatch: 0.6,
 	}
 }
 
@@ -286,12 +286,12 @@ func ParseConfig(fields []doc.Field) (Config, error) {
 	def := DefaultConfig()
 	r := newReader(fields)
 	c := Config{
-		Statuses:      r.list(keyStatuses, def.Statuses),
-		TagGroups:     r.list(keyTagGroups, def.TagGroups),
-		GitHubRepo:    r.text(keyGitHubRepo),
-		EmbeddingsURL: r.text(keyEmbeddingsURL),
-		DupeText:      r.float(keyDupeText, def.DupeText),
-		Commit:        r.boolean(keyCommit),
+		Statuses:       r.list(keyStatuses, def.Statuses),
+		TagGroups:      r.list(keyTagGroups, def.TagGroups),
+		GitHubRepo:     r.text(keyGitHubRepo),
+		EmbeddingsURL:  r.text(keyEmbeddingsURL),
+		RetractedMatch: r.float(keyRetractedMatch, def.RetractedMatch),
+		Commit:         r.boolean(keyCommit),
 	}
 	if err := r.done(); err != nil {
 		return Config{}, err
@@ -300,16 +300,16 @@ func ParseConfig(fields []doc.Field) (Config, error) {
 	return c, nil
 }
 
-// Fields returns the config's frontmatter in the order statuses, tag_groups, github_repo, embeddings_url, dupe_text,
-// commit, then Extra. github_repo and embeddings_url are left out when empty, and commit when false. Numbers are
-// written with strconv.FormatFloat(f, 'g', -1, 64).
+// Fields returns the config's frontmatter in the order statuses, tag_groups, github_repo, embeddings_url,
+// retracted_match, commit, then Extra. github_repo and embeddings_url are left out when empty, and commit when false.
+// Numbers are written with strconv.FormatFloat(f, 'g', -1, 64).
 func (c Config) Fields() []doc.Field {
 	var w writer
 	w.list(keyStatuses, c.Statuses)
 	w.list(keyTagGroups, c.TagGroups)
 	w.optText(keyGitHubRepo, c.GitHubRepo)
 	w.optText(keyEmbeddingsURL, c.EmbeddingsURL)
-	w.float(keyDupeText, c.DupeText)
+	w.float(keyRetractedMatch, c.RetractedMatch)
 	w.optTrue(keyCommit, c.Commit)
 	return w.with(c.Extra)
 }
