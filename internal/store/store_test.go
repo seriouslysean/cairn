@@ -110,7 +110,7 @@ func TestConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, err := s.Config()
-	if err != nil || !reflect.DeepEqual(c.Statuses, []string{"todo", "done"}) || c.DupeText != 0.6 {
+	if err != nil || !reflect.DeepEqual(c.Statuses, []string{"todo", "done"}) || c.RetractedMatch != 0.6 {
 		t.Fatalf("got %+v, %v", c, err)
 	}
 	if err := os.Remove(cfg); err != nil {

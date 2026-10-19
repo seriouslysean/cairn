@@ -105,12 +105,12 @@ type retractionJSON struct {
 }
 
 type commentResultJSON struct {
-	Comment  commentJSON `json:"comment"`
-	Warnings []dupeJSON  `json:"warnings"`
+	Comment          commentJSON          `json:"comment"`
+	RetractedMatches []retractedMatchJSON `json:"retracted_matches"`
 }
 
-// dupeJSON is a warning that a new comment matches a retracted one.
-type dupeJSON struct {
+// retractedMatchJSON is a retracted comment that a new comment matches.
+type retractedMatchJSON struct {
 	Comment string  `json:"comment"`
 	Reason  string  `json:"reason"`
 	Score   float64 `json:"score"`

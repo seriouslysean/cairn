@@ -1,11 +1,11 @@
 // Package cli runs cairn's commands. It never prompts and never opens an editor.
 //
-// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json, --all and --branches take no
-// value. Flags and positional arguments can come in any order, and "--" ends the flags. A flag that takes a value
+// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json, --retracted and --branches take
+// no value. Flags and positional arguments can come in any order, and "--" ends the flags. A flag that takes a value
 // takes the next argument even when it starts with "-", so "--tag -t" works, but not one that starts with "--": that
 // is a missing value, and "--name=--value" passes such a value. --tag can be repeated; for any other flag the last
 // one wins. No arguments at all is a usage error. "--help" and "-h" mean help, and "--version" means version.
-// search --meaning, which a later step builds, is a usage error until then. So are --all anywhere but show and
+// search --meaning, which a later step builds, is a usage error until then. So are --retracted anywhere but show and
 // --branches anywhere but ls and show.
 //
 // Output: --json anywhere before "--" turns on JSON, even when the other arguments are wrong. With --json, success
@@ -55,11 +55,11 @@
 //     it; a removed tag only has to be non-empty, so a tag whose group left the config can still go. An empty
 //     --milestone or --due clears it. updated becomes Env.Now as in new. Text: the id and "\n". Data: the issue.
 //   - rm <id>: deletes the issue folder, comments included. Text: "removed <id>\n". Data: {"id": id}.
-//   - show <id> [--all]: Text: the issue for a person to read, with its by, persona and model when set, then its
-//     active comments in order, each with its id, kind, by, persona and model when set, at, source when set, and
-//     body. --all adds the retracted comments in their places, each marked "retracted" with its retracted_by,
+//   - show <id> [--retracted]: Text: the issue for a person to read, with its by, persona and model when set, then
+//     its active comments in order, each with its id, kind, by, persona and model when set, at, source when set, and
+//     body. --retracted adds the retracted comments in their places, each marked "retracted" with its retracted_by,
 //     retracted_at, reason and disproved_by. Data: the issue plus "comments", its active comments in order (all of
-//     them with --all), a list never null.
+//     them with --retracted), a list never null.
 //   - ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]: lists issues in store order. Every filter
 //     given must match; --due-before keeps issues with a due date before d. Text: one "<id>\t<status>\t<title>\n"
 //     line per issue. Data: a list of issues without "body" (an empty list, never null).
@@ -72,17 +72,17 @@
 //     checkout).
 //   - show <id> --branches: the checkout's version of the issue, then each branch version of it, by branch;
 //     not_found when there is none. It reads only that issue from each branch, so its warnings are about that issue.
-//     --all applies to each version. Text: each version as show prints it, a branch version after a line
+//     --retracted applies to each version. Text: each version as show prints it, a branch version after a line
 //     "=== branch <name> ===", with a blank line before every version but the first. Data: a list of show's data,
 //     each with "branch" ("" for the checkout), a list even when there is one version.
 //   - comment <id> --kind evidence|decision|result [--source s] "text": adds a comment with a new id, by, persona and
 //     model from the actor flags, and at set to Env.Now as in new. The text must not be blank, and gets a trailing
 //     "\n" as a body does. evidence needs a --source that is not blank; any other kind, github included, is a usage
 //     error. A comment never changes issue.md. When the text's words.Overlap with a retracted comment on the same
-//     issue reaches the config's dupe_text, the comment is still added, with one warning per such comment in
+//     issue reaches the config's retracted_match, the comment is still added, with one warning per such comment in
 //     comment order: "matches retracted comment <comment id> (reason <reason as %q>)". Text: the new comment id and
-//     "\n". Data: {"comment": the comment, "warnings": [{"comment": id, "reason": reason, "score": overlap}, …]},
-//     warnings an empty list when there are none.
+//     "\n". Data: {"comment": the comment, "retracted_matches": [{"comment": id, "reason": reason, "score":
+//     overlap}, …]}, retracted_matches an empty list when there are none.
 //   - retract <id> <comment> --reason "…" [--disproved-by <comment>]: keeps the comment and sets retracted_by to the
 //     actor, retracted_at to Env.Now as in new, retracted_reason, and disproved_by. The reason must not be blank.
 //     --disproved-by names another comment on the same issue: one that does not exist is not_found, and the comment
@@ -178,7 +178,7 @@ const (
 // Flag names, without the leading "--".
 const (
 	flagJSON        = "json"
-	flagAll         = "all"
+	flagRetracted   = "retracted"
 	flagBranches    = "branches"
 	flagAs          = "as"
 	flagPersona     = "persona"
@@ -202,7 +202,7 @@ const (
 )
 
 // switches are the flags that take no value. Every other flag takes one.
-var switches = map[string]bool{flagJSON: true, flagAll: true, flagBranches: true}
+var switches = map[string]bool{flagJSON: true, flagRetracted: true, flagBranches: true}
 
 // actorFlags are the flags every write takes.
 var actorFlags = []string{flagAs, flagPersona, flagModel}
@@ -231,7 +231,7 @@ var commands = map[string]command{
 	"edit": {flags: []string{flagTitle, flagBody, flagStatus, flagTag, flagMilestone, flagDue}, writes: true,
 		args: 1, argsErr: "edit requires exactly one issue id", run: runEdit},
 	"rm": {writes: true, args: 1, argsErr: "rm requires exactly one issue id", run: runRm},
-	"show": {flags: []string{flagAll, flagBranches},
+	"show": {flags: []string{flagRetracted, flagBranches},
 		args: 1, argsErr: "show requires exactly one issue id", run: runShow},
 	"ls": {flags: []string{flagStatus, flagTag, flagMilestone, flagDueBefore, flagBranches},
 		argsErr: "ls takes no positional arguments", run: runLs},

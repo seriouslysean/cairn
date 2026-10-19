@@ -42,13 +42,13 @@ func runComment(c *call) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
-	warnings := []dupeJSON{}
+	matches := []retractedMatchJSON{}
 	for _, old := range comments {
 		if !old.Retracted() {
 			continue
 		}
-		if score := words.Overlap(text, old.Body); score >= cfg.DupeText {
-			warnings = append(warnings, dupeJSON{Comment: old.ID, Reason: old.RetractedReason, Score: score})
+		if score := words.Overlap(text, old.Body); score >= cfg.RetractedMatch {
+			matches = append(matches, retractedMatchJSON{Comment: old.ID, Reason: old.RetractedReason, Score: score})
 			c.warn(fmt.Sprintf("matches retracted comment %s (reason %q)", old.ID, old.RetractedReason))
 		}
 	}
@@ -70,7 +70,7 @@ func runComment(c *call) (output, error) {
 		return output{}, err
 	}
 	c.wroteIssue(s, issueID)
-	return output{commentResultJSON{Comment: commentData(cm), Warnings: warnings}, cm.ID + "\n"}, nil
+	return output{commentResultJSON{Comment: commentData(cm), RetractedMatches: matches}, cm.ID + "\n"}, nil
 }
 
 func runRetract(c *call) (output, error) {
