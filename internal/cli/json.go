@@ -5,8 +5,9 @@ import "github.com/seriouslysean/cairn/internal/model"
 // The JSON that commands print, as the package doc describes it.
 
 type successJSON struct {
-	OK   bool `json:"ok"`
-	Data any  `json:"data"`
+	OK       bool     `json:"ok"`
+	Data     any      `json:"data"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type failureJSON struct {

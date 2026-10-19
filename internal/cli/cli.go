@@ -427,7 +427,7 @@ func (c *call) warn(msg string) {
 // print writes out to stdout: its data in the success envelope with --json, else its text.
 func (c *call) print(out output, jsonOn bool) error {
 	if jsonOn {
-		return json.NewEncoder(c.env.Stdout).Encode(successJSON{OK: true, Data: out.data})
+		return json.NewEncoder(c.env.Stdout).Encode(successJSON{OK: true, Data: out.data, Warnings: c.warnings})
 	}
 	_, err := io.WriteString(c.env.Stdout, out.text)
 	return err
