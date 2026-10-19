@@ -345,7 +345,8 @@ func TestParseRejectsWrongShape(t *testing.T) {
 
 func TestIssueCreator(t *testing.T) {
 	i := Issue{ID: "7f3k", Title: "t", Status: "open", Due: "2026-11-01", By: "alice", Persona: "skeptic",
-		Model: "example-model-1", Created: at("2026-10-17T19:00:00.000Z"), Updated: at("2026-10-17T19:00:00.000Z"), GitHub: 7}
+		Model: "example-model-1", Created: at("2026-10-17T19:00:00.000Z"), Updated: at("2026-10-17T19:00:00.000Z"),
+		GitHub: 7}
 	if got := keys(i.Fields()); got != "id title status due by persona model created updated github" {
 		t.Errorf("order: %q", got)
 	}

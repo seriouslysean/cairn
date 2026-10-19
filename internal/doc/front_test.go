@@ -6,7 +6,8 @@ import (
 	"testing"
 )
 
-const sample = "---\nid: 7f3k\ntitle: \"Export: drops the last row\"\ntags: [severity:high, area:export]\nnone: []\nstatus: open\n---\nBody line.\n"
+const sample = "---\nid: 7f3k\ntitle: \"Export: drops the last row\"\ntags: [severity:high, area:export]\nnone: []\n" +
+	"status: open\n---\nBody line.\n"
 
 func TestParse(t *testing.T) {
 	f, body, err := Parse([]byte(sample))

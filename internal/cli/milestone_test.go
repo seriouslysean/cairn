@@ -54,7 +54,8 @@ func TestMilestoneNew(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %v\nwant %v", got, want)
 	}
-	if f := tr.milestoneFile("v0.4"); f != "---\nid: v0.4\ntitle: First release\nstatus: backlog\ndue: 2026-12-01\n---\n" {
+	wantFile := "---\nid: v0.4\ntitle: First release\nstatus: backlog\ndue: 2026-12-01\n---\n"
+	if f := tr.milestoneFile("v0.4"); f != wantFile {
 		t.Fatalf("file: %q", f)
 	}
 	if code, out, errOut := tr.run("milestone", "new", "beta", "Beta", "--as", "bob", "--persona", "skeptic",

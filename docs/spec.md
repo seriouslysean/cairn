@@ -81,7 +81,8 @@ embeddings_url: http://127.0.0.1:8080/v1/embeddings
 dupe_text: 0.6
 ---
 ```
-Every key is optional. Shown above with the defaults, except that `github_repo` and `embeddings_url` are off when absent.
+Every key is optional. Shown above with the defaults, except that `github_repo` and `embeddings_url` are off when
+absent.
 
 ## IDs
 - Issues: 4 lowercase characters from Crockford's base32 alphabet (`0-9a-z` without `i l o u`), checked against existing

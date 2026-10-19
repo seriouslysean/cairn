@@ -105,14 +105,15 @@ func TestFindNone(t *testing.T) {
 
 func TestConfig(t *testing.T) {
 	s := newStore(t)
-	if err := os.WriteFile(filepath.Join(s.Dir, "config.yml"), []byte("---\nstatuses: [todo, done]\n---\n"), 0o644); err != nil {
+	cfg := filepath.Join(s.Dir, "config.yml")
+	if err := os.WriteFile(cfg, []byte("---\nstatuses: [todo, done]\n---\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c, err := s.Config()
 	if err != nil || !reflect.DeepEqual(c.Statuses, []string{"todo", "done"}) || c.DupeText != 0.6 {
 		t.Fatalf("got %+v, %v", c, err)
 	}
-	if err := os.Remove(filepath.Join(s.Dir, "config.yml")); err != nil {
+	if err := os.Remove(cfg); err != nil {
 		t.Fatal(err)
 	}
 	if c, err := s.Config(); err != nil || !reflect.DeepEqual(c, model.DefaultConfig()) {
@@ -349,7 +350,8 @@ func TestListIssuesErrors(t *testing.T) {
 	if got, err := s.ListIssues(); err != nil || len(got) != 1 {
 		t.Fatalf("folder without issue.md: %v, %v", got, err)
 	}
-	if err := os.WriteFile(filepath.Join(s.Dir, "issues", "bbbb", "issue.md"), []byte("not frontmatter"), 0o644); err != nil {
+	broken := filepath.Join(s.Dir, "issues", "bbbb", "issue.md")
+	if err := os.WriteFile(broken, []byte("not frontmatter"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ListIssues(); err == nil {

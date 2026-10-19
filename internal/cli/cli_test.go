@@ -176,8 +176,8 @@ func TestIssueJSONShape(t *testing.T) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		t.Fatal(err)
 	}
-	keys := []string{"id", "title", "status", "tags", "milestone", "due", "by", "persona", "model", "created", "updated",
-		"github", "body"}
+	keys := []string{"id", "title", "status", "tags", "milestone", "due", "by", "persona", "model", "created",
+		"updated", "github", "body"}
 	for _, k := range keys {
 		if _, ok := m[k]; !ok {
 			t.Errorf("missing key %q", k)
@@ -258,8 +258,8 @@ func TestActor(t *testing.T) {
 
 func TestFlagForms(t *testing.T) {
 	tr := newTracker(t)
-	if i := tr.issue("new", "--tag", "area:x", "--due=2026-11-01", "Title first or last"); i.Title != "Title first or last" ||
-		i.Due != "2026-11-01" || !reflect.DeepEqual(i.Tags, []string{"area:x"}) {
+	i := tr.issue("new", "--tag", "area:x", "--due=2026-11-01", "Title first or last")
+	if i.Title != "Title first or last" || i.Due != "2026-11-01" || !reflect.DeepEqual(i.Tags, []string{"area:x"}) {
 		t.Fatalf("got %+v", i)
 	}
 	code, out, _ := tr.run("new", "--json", "--", "--looks-like-a-flag")
@@ -490,7 +490,8 @@ func TestNotFoundNamesTheID(t *testing.T) {
 
 func TestConfigWithoutStatuses(t *testing.T) {
 	tr := newTracker(t)
-	if err := os.WriteFile(filepath.Join(tr.dir, ".cairn", "config.yml"), []byte("---\nstatuses: []\n---\n"), 0o644); err != nil {
+	cfg := filepath.Join(tr.dir, ".cairn", "config.yml")
+	if err := os.WriteFile(cfg, []byte("---\nstatuses: []\n---\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	tr.wantError(1, "error", "new", "a")
@@ -529,7 +530,8 @@ func TestNewRecordsCreator(t *testing.T) {
 	if !strings.Contains(string(data), "\nby: bob\npersona: skeptic\nmodel: example-model-1\ncreated: ") {
 		t.Fatalf("file:\n%s", data)
 	}
-	if got := tr.creator("edit", "0123", "--title", "b", "--persona", "other", "--model", "example-model-2"); got != want {
+	got := tr.creator("edit", "0123", "--title", "b", "--persona", "other", "--model", "example-model-2")
+	if got != want {
 		t.Fatalf("edit changed the creator: %+v", got)
 	}
 	if got := tr.creator("show", "0123"); got != want {
