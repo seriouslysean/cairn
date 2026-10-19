@@ -2,6 +2,7 @@ package doc
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -24,6 +25,28 @@ func TestParse(t *testing.T) {
 	}
 	if string(body) != "Body line.\n" {
 		t.Fatalf("body %q", body)
+	}
+}
+
+// A file checked out with CRLF line endings, as git does on Windows, has the same fields. The body comes back as the
+// file has it, CRs included.
+func TestParseCRLF(t *testing.T) {
+	want, lfBody, err := Parse([]byte(sample))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, body, err := Parse([]byte(strings.ReplaceAll(sample, "\n", "\r\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(f, want) {
+		t.Fatalf("fields %#v", f)
+	}
+	if want := strings.ReplaceAll(string(lfBody), "\n", "\r\n"); string(body) != want {
+		t.Fatalf("body %q, want %q", body, want)
+	}
+	if _, _, err := Parse([]byte("---\r\nid: a\r\n\r\ntitle:\r\n---\r\n")); err != nil {
+		t.Fatalf("a blank line and an empty value: %v", err)
 	}
 }
 

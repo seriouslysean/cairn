@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -569,5 +570,43 @@ func TestOldIssueKeepsUnknownCreator(t *testing.T) {
 	}
 	if strings.Contains(string(data), "by:") || strings.Contains(string(data), "persona:") {
 		t.Fatalf("file:\n%s", data)
+	}
+}
+
+// A tracker checked out with CRLF line endings, as git does on Windows, reads as it was written, and its files can
+// still be changed. A body given with CRLF line endings reads back as it was given.
+func TestCRLFFiles(t *testing.T) {
+	tr := newTracker(t)
+	i := tr.issue("new", "Title", "--body", "Body", "--milestone", "v1")
+	tr.comment("comment", i.ID, "--kind", "decision", "Agreed")
+	if code, _, errOut := tr.run("milestone", "new", "v1", "One"); code != 0 {
+		t.Fatalf("milestone new: exit %d, %s", code, errOut)
+	}
+	err := filepath.WalkDir(filepath.Join(tr.dir, ".cairn"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, bytes.ReplaceAll(data, []byte("\n"), []byte("\r\n")), 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"ls"}, {"show", i.ID}, {"tags"}, {"milestones"}, {"search", "agreed"},
+		{"edit", i.ID, "--status", "open"}, {"comment", i.ID, "--kind", "result", "Done"},
+		{"milestone", "edit", "v1", "--title", "First"}} {
+		if code, _, errOut := tr.run(args...); code != 0 {
+			t.Fatalf("%q: exit %d, %s", args, code, errOut)
+		}
+	}
+	if got := tr.issue("show", i.ID); got.Body != "Body\r\n" || got.Status != "open" {
+		t.Fatalf("show: %+v", got)
+	}
+	added := tr.issue("new", "CRLF body", "--body", "a\r\nb")
+	if got := tr.issue("show", added.ID); added.Body != "a\r\nb\n" || got.Body != added.Body {
+		t.Fatalf("new gave %q, show gives %q", added.Body, got.Body)
 	}
 }
