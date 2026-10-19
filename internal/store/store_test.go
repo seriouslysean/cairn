@@ -3,9 +3,12 @@ package store
 import (
 	"bytes"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -185,6 +188,59 @@ func TestLoadIssueIDMismatch(t *testing.T) {
 	}
 	if _, _, err := s.LoadIssue("cccc"); err == nil || errors.Is(err, ErrNotFound) {
 		t.Errorf("comment id mismatch: %v", err)
+	}
+}
+
+// ReadIssue reads an issue folder wherever its files are; here they are in memory, as a git commit gives them. It
+// reads the names the folder lists, and of those only issue.md and the comment files.
+func TestReadIssue(t *testing.T) {
+	i := issue("7f3k", t0)
+	c1, c2 := comment("c-0001", t0.Add(time.Minute)), comment("c-0002", t0)
+	files := map[string][]byte{"notes.txt": []byte("junk")}
+	add := func(name string, fields []doc.Field, body string) {
+		data, err := doc.Format(fields, []byte(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = data
+	}
+	add("issue.md", i.Fields(), i.Body)
+	add("c-0001.md", c1.Fields(), c1.Body)
+	add("c-0002.md", c2.Fields(), c2.Body)
+	var read []string
+	folder := func(names ...string) Folder {
+		return Folder{Path: "commit:issues/7f3k", Names: names, Read: func(name string) ([]byte, error) {
+			read = append(read, name)
+			if data, ok := files[name]; ok && slices.Contains(names, name) {
+				return data, nil
+			}
+			return nil, fs.ErrNotExist
+		}}
+	}
+	got, cs, err := ReadIssue("7f3k", folder("c-0001.md", "notes.txt", "issue.md", "c-0002.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, i) || !reflect.DeepEqual(cs, []model.Comment{c2, c1}) {
+		t.Fatalf("got  %+v %+v\nwant %+v %+v", got, cs, i, []model.Comment{c2, c1})
+	}
+	if slices.Contains(read, "notes.txt") {
+		t.Errorf("read a file that is neither issue.md nor a comment: %q", read)
+	}
+	if _, cs, err := ReadIssue("7f3k", folder("issue.md", "c-0001.md")); err != nil || len(cs) != 1 {
+		t.Errorf("a comment the folder does not list: %d comments, %v", len(cs), err)
+	}
+	if _, _, err := ReadIssue("7f3k", folder("c-0001.md")); !errors.Is(err, ErrNotFound) {
+		t.Errorf("no issue.md: %v", err)
+	}
+	if _, _, err := ReadIssue("../x", folder("issue.md")); !errors.Is(err, ErrNotFound) {
+		t.Errorf("bad id: %v", err)
+	}
+	files["c-0002.md"] = []byte("nope")
+	want := filepath.Join("commit:issues/7f3k", "c-0002.md")
+	_, _, err = ReadIssue("7f3k", folder("issue.md", "c-0002.md"))
+	if err == nil || errors.Is(err, ErrNotFound) || !strings.Contains(err.Error(), want) {
+		t.Errorf("a file that does not parse is an error naming it by the folder's path: %v", err)
 	}
 }
 

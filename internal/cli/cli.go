@@ -1,19 +1,19 @@
 // Package cli runs cairn's commands. It never prompts and never opens an editor.
 //
-// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json and --all take no value.
-// Flags and positional arguments can come in any order, and "--" ends the flags. A flag that takes a value
+// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json, --all and --branches take no
+// value. Flags and positional arguments can come in any order, and "--" ends the flags. A flag that takes a value
 // takes the next argument even when it starts with "-", so "--tag -t" works, but not one that starts with "--": that
 // is a missing value, and "--name=--value" passes such a value. --tag can be repeated; for any other flag the last
 // one wins. No arguments at all is a usage error. "--help" and "-h" mean help, and "--version" means version.
-// --branches and search --meaning, which later steps build, are usage errors until then, and so is --all anywhere but
-// show.
+// search --meaning, which a later step builds, is a usage error until then. So are --all anywhere but show and
+// --branches anywhere but ls and show.
 //
 // Output: --json anywhere before "--" turns on JSON, even when the other arguments are wrong. With --json, success
 // prints {"ok": true, "data": …} and failure prints
 // {"ok": false, "error": {"code": "…", "message": "…"}} on stdout, plus the message on one line of stderr. Without
 // --json, success prints text on stdout and failure prints "cairn: <message>" on one line of stderr and nothing on
 // stdout. A command that succeeds with warnings still exits 0, and prints each warning in both modes as one line
-// "cairn: warning: <message>" on stderr.
+// "cairn: warning: <message>" on stderr. A command that fails prints no warnings.
 //
 // Exit codes and error codes:
 //   - 0: ok.
@@ -50,6 +50,17 @@
 //   - ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]: lists issues in store order. Every filter
 //     given must match; --due-before keeps issues with a due date before d. Text: one "<id>\t<status>\t<title>\n"
 //     line per issue. Data: a list of issues without "body" (an empty list, never null).
+//   - --branches, on ls and show, adds what active branches committed, as branchIssues reads it. Without it Cairn
+//     never runs git. With it, failing to read git (no git, no repository, no default branch) is an "error", and a
+//     branch file that cannot be read or does not parse is a warning that names the branch and the issue.
+//   - ls --branches: the checkout's rows, then the branch versions, all through the same filters. Text: a branch
+//     version's line is "<id>\t<status>\t<title>\t<branch>\n". Data: every item also has "branch" ("" for the
+//     checkout).
+//   - show <id> --branches: the checkout's version of the issue, then each branch version of it, by branch;
+//     not_found when there is none. It reads only that issue from each branch, so its warnings are about that issue.
+//     --all applies to each version. Text: each version as show prints it, a branch version after a line
+//     "=== branch <name> ===", with a blank line before every version but the first. Data: a list of show's data,
+//     each with "branch" ("" for the checkout), a list even when there is one version.
 //   - comment <id> --kind evidence|decision|result [--source s] "text": adds a comment with a new id, by, persona and
 //     model from the actor flags, and at set to Env.Now as in new. The text must not be blank, and gets a trailing
 //     "\n" as a body does. evidence needs a --source that is not blank; any other kind, github included, is a usage
@@ -153,6 +164,7 @@ const (
 const (
 	flagJSON        = "json"
 	flagAll         = "all"
+	flagBranches    = "branches"
 	flagAs          = "as"
 	flagPersona     = "persona"
 	flagModel       = "model"
@@ -175,7 +187,7 @@ const (
 )
 
 // switches are the flags that take no value. Every other flag takes one.
-var switches = map[string]bool{flagJSON: true, flagAll: true}
+var switches = map[string]bool{flagJSON: true, flagAll: true, flagBranches: true}
 
 // actorFlags are the flags every write takes.
 var actorFlags = []string{flagAs, flagPersona, flagModel}
@@ -203,9 +215,10 @@ var commands = map[string]command{
 		args: 1, argsErr: "new requires exactly one title argument", run: runNew},
 	"edit": {flags: []string{flagTitle, flagBody, flagStatus, flagTag, flagMilestone, flagDue}, writes: true,
 		args: 1, argsErr: "edit requires exactly one issue id", run: runEdit},
-	"rm":   {writes: true, args: 1, argsErr: "rm requires exactly one issue id", run: runRm},
-	"show": {flags: []string{flagAll}, args: 1, argsErr: "show requires exactly one issue id", run: runShow},
-	"ls": {flags: []string{flagStatus, flagTag, flagMilestone, flagDueBefore},
+	"rm": {writes: true, args: 1, argsErr: "rm requires exactly one issue id", run: runRm},
+	"show": {flags: []string{flagAll, flagBranches},
+		args: 1, argsErr: "show requires exactly one issue id", run: runShow},
+	"ls": {flags: []string{flagStatus, flagTag, flagMilestone, flagDueBefore, flagBranches},
 		argsErr: "ls takes no positional arguments", run: runLs},
 	"comment": {flags: []string{flagKind, flagSource}, writes: true,
 		args: 2, argsErr: "comment requires exactly one issue id and one text", run: runComment},

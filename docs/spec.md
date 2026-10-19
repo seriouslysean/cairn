@@ -148,13 +148,17 @@ An agent with only the binary learns these from `cairn help`:
 - Cairn does not look for duplicates. Run `search` before `new`.
 
 ## Branches
-- By default, commands read the current checkout only.
-- `--branches` adds what active branches changed. An active branch is a local branch that:
-  - is not yet merged into the default branch;
-  - has a commit in the last 14 days;
-  - has files in `.cairn/` that changed since it left the default branch (`git diff --name-only <default>...<branch> -- .cairn/`).
-- Only those files are read from each branch.
-- An issue changed on both the default branch and a branch shows both versions, marked.
+- By default, commands read the current checkout only, and never run git.
+- `ls --branches` and `show --branches` add what active branches committed. The default branch is the one
+  `origin/HEAD` names, else `main`, else `master`. An active branch is a local branch, in any worktree, that:
+  - is not the default branch or the branch checked out here;
+  - shares history with the default branch, and is not yet merged into it;
+  - has a last commit less than 14 days old;
+  - changed files in `.cairn/issues/` since it left the default branch.
+- From each active branch, every issue it changed is read whole, the issue and its comments, as its last commit has
+  it. Uncommitted work, here or in another worktree, is not seen. An issue the branch removed is left out.
+- `ls` lists the checkout's issues, then each branch's, marked with the branch name. `show` prints the checkout's
+  version, then each branch's under a `=== branch <name> ===` line, so an issue changed on two branches shows both.
 
 ## GitHub sync (optional, through the `gh` CLI)
 - `pull`:

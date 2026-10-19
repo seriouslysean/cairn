@@ -167,14 +167,56 @@ func runShow(c *call) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
+	if c.switches[flagBranches] {
+		return showBranches(c, s, issueID)
+	}
 	i, comments, err := s.LoadIssue(issueID)
 	if err != nil {
 		return output{}, noIssue(err, issueID)
 	}
-	if !c.switches[flagAll] {
-		comments = slices.DeleteFunc(comments, model.Comment.Retracted)
-	}
+	comments = c.visible(comments)
 	return output{showData(i, comments), showText(i, comments)}, nil
+}
+
+// showBranches is show --branches: the checkout's version of the issue when it has one, then each branch's.
+func showBranches(c *call, s *store.Store, issueID string) (output, error) {
+	var versions []branchVersion
+	switch i, comments, err := s.LoadIssue(issueID); {
+	case err == nil:
+		versions = append(versions, branchVersion{issue: i, comments: comments})
+	case !errors.Is(err, store.ErrNotFound):
+		return output{}, err
+	}
+	onBranches, err := c.branchIssues(s, issueID)
+	if err != nil {
+		return output{}, err
+	}
+	versions = append(versions, onBranches...)
+	if len(versions) == 0 {
+		return output{}, noIssue(store.ErrNotFound, issueID)
+	}
+	data := make([]showBranchJSON, len(versions))
+	var text strings.Builder
+	for n, v := range versions {
+		comments := c.visible(v.comments)
+		data[n] = showBranchJSON{showData(v.issue, comments), v.branch}
+		if n > 0 {
+			text.WriteString("\n")
+		}
+		if v.branch != "" {
+			fmt.Fprintf(&text, "=== branch %s ===\n", v.branch)
+		}
+		text.WriteString(showText(v.issue, comments))
+	}
+	return output{data, text.String()}, nil
+}
+
+// visible is the comments show prints: the active ones, or all of them with --all.
+func (c *call) visible(comments []model.Comment) []model.Comment {
+	if c.switches[flagAll] {
+		return comments
+	}
+	return slices.DeleteFunc(comments, model.Comment.Retracted)
 }
 
 // showText is the issue and its comments for a person to read.
