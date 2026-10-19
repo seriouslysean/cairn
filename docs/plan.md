@@ -161,6 +161,27 @@ Read-only context:
 - internal/model/model.go
 - internal/id/id.go
 
+## Step 8: commit on write
+With `commit: true` in `config.yml`, each write commits what it changed, so a tracker kept in a repository of its own
+needs no watcher and no separate commit. It is off by default because it commits on whatever branch is checked out.
+The contract is the package comment in `internal/cli/cli.go`.
+
+Drafter edits:
+- internal/cli/cli.go
+- internal/cli/commit.go
+- internal/cli/comments.go
+- internal/cli/issues.go
+- internal/cli/milestones.go
+- internal/model/fields.go
+- internal/model/model.go
+- internal/store/store.go
+
+Read-only context:
+- docs/spec.md
+- internal/cli/branches.go
+- internal/cli/commit_test.go
+- internal/model/model_test.go
+
 ## Later, in this order
 1. `pull`, one way: GitHub issues and their comments become Cairn issues and comments.
 2. `push`.
