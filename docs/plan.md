@@ -164,6 +164,7 @@ Read-only context:
 ## Step 8: commit on write
 With `commit: true` in `config.yml`, each write commits what it changed, so a tracker kept in a repository of its own
 needs no watcher and no separate commit. It is off by default because it commits on whatever branch is checked out.
+A commit that fails is a warning, so the JSON envelope gains `warnings`, and an agent reading only stdout sees it.
 The contract is the package comment in `internal/cli/cli.go`.
 
 Drafter edits:
@@ -171,6 +172,7 @@ Drafter edits:
 - internal/cli/commit.go
 - internal/cli/comments.go
 - internal/cli/issues.go
+- internal/cli/json.go
 - internal/cli/milestones.go
 - internal/model/fields.go
 - internal/model/model.go

@@ -113,8 +113,9 @@ absent. `commit` is `true` or `false`.
 - Every write takes `--as <actor>` and, optionally, `--persona <p>` and `--model <m>`. The actor can also come from the
   `CAIRN_ACTOR` environment variable. `new` and `comment` record all three as `by`, `persona` and `model`; `retract`
   records the actor as `retracted_by`.
-- Every command takes `--json`. On success it prints `{"ok": true, "data": …}`. On failure it prints
-  `{"ok": false, "error": {"code": "…", "message": "…"}}` on stdout, and a one-line message on stderr.
+- Every command takes `--json`. On success it prints `{"ok": true, "data": …}`, plus `"warnings": ["…"]` when it
+  gave warnings, the same ones stderr gets. On failure it prints `{"ok": false, "error": {"code": "…", "message": "…"}}`
+  on stdout, and a one-line message on stderr.
 - Exit codes:
   - 0: ok;
   - 1: error;
