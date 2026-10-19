@@ -102,7 +102,7 @@ func runSearch(c *call) (output, error) {
 	}
 	data := []searchJSON{}
 	for _, i := range issues {
-		_, comments, err := s.LoadIssue(i.ID)
+		comments, err := s.LoadComments(i.ID)
 		if err != nil {
 			return output{}, err
 		}

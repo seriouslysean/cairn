@@ -119,16 +119,39 @@ func (s *Store) Config() (model.Config, error) {
 
 // LoadIssue reads issues/<id> on disk, as ReadIssue reads a folder. A missing folder is ErrNotFound too.
 func (s *Store) LoadIssue(issueID string) (model.Issue, []model.Comment, error) {
+	f, err := s.issueFolder(issueID)
+	if err != nil {
+		return model.Issue{}, nil, err
+	}
+	return ReadIssue(issueID, f)
+}
+
+// LoadComments reads the comments in issues/<id> on disk, sorted as ReadIssue sorts them, without reading issue.md.
+// It returns ErrNotFound when the id is not valid or the folder has no issue.md.
+func (s *Store) LoadComments(issueID string) ([]model.Comment, error) {
+	if !s.hasIssue(issueID) {
+		return nil, ErrNotFound
+	}
+	f, err := s.issueFolder(issueID)
+	if err != nil {
+		return nil, err
+	}
+	return readComments(f)
+}
+
+// issueFolder is issues/<id> on disk, holding the files in it. It returns ErrNotFound when the id is not valid or the
+// folder is missing.
+func (s *Store) issueFolder(issueID string) (Folder, error) {
 	if !id.Valid(issueID) {
-		return model.Issue{}, nil, ErrNotFound
+		return Folder{}, ErrNotFound
 	}
 	dir := s.issueDir(issueID)
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, fs.ErrNotExist) {
-		return model.Issue{}, nil, ErrNotFound
+		return Folder{}, ErrNotFound
 	}
 	if err != nil {
-		return model.Issue{}, nil, err
+		return Folder{}, err
 	}
 	var names []string
 	for _, e := range entries {
@@ -136,7 +159,7 @@ func (s *Store) LoadIssue(issueID string) (model.Issue, []model.Comment, error) 
 			names = append(names, e.Name())
 		}
 	}
-	return ReadIssue(issueID, diskFolder(dir, names))
+	return diskFolder(dir, names), nil
 }
 
 // Folder is an issue folder, wherever its files are: on disk, or in a git commit.
@@ -179,21 +202,10 @@ func ReadIssue(issueID string, f Folder) (model.Issue, []model.Comment, error) {
 	if err != nil {
 		return model.Issue{}, nil, err
 	}
-	var comments []model.Comment
-	for _, name := range f.Names {
-		commentID, ok := commentFileID(name)
-		if !ok {
-			continue
-		}
-		c, err := readComment(commentID, f)
-		if err != nil {
-			return model.Issue{}, nil, err
-		}
-		comments = append(comments, c)
+	comments, err := readComments(f)
+	if err != nil {
+		return model.Issue{}, nil, err
 	}
-	slices.SortFunc(comments, func(a, b model.Comment) int {
-		return cmp.Or(a.At.Compare(b.At), strings.Compare(a.ID, b.ID))
-	})
 	return issue, comments, nil
 }
 
@@ -269,13 +281,13 @@ func (s *Store) NewCommentID(issueID string, r io.Reader) (string, error) {
 	if !s.hasIssue(issueID) {
 		return "", ErrNotFound
 	}
-	entries, err := os.ReadDir(s.issueDir(issueID))
+	f, err := s.issueFolder(issueID)
 	if err != nil {
 		return "", err
 	}
 	taken := map[string]bool{}
-	for _, e := range entries {
-		if commentID, ok := commentFileID(e.Name()); ok && !e.IsDir() {
+	for _, name := range f.Names {
+		if commentID, ok := commentFileID(name); ok {
 			taken[commentID] = true
 		}
 	}
@@ -439,6 +451,26 @@ func readIssue(issueID string, f Folder) (model.Issue, error) {
 		return model.Issue{}, fileError(f.path(issueFile), err)
 	}
 	return issue, nil
+}
+
+// readComments reads every comment file in f, sorted by At, then by ID.
+func readComments(f Folder) ([]model.Comment, error) {
+	var comments []model.Comment
+	for _, name := range f.Names {
+		commentID, ok := commentFileID(name)
+		if !ok {
+			continue
+		}
+		c, err := readComment(commentID, f)
+		if err != nil {
+			return nil, err
+		}
+		comments = append(comments, c)
+	}
+	slices.SortFunc(comments, func(a, b model.Comment) int {
+		return cmp.Or(a.At.Compare(b.At), strings.Compare(a.ID, b.ID))
+	})
+	return comments, nil
 }
 
 // readComment reads <commentID>.md in f.
