@@ -2,7 +2,10 @@ package cli
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"path"
+	"strings"
+	"time"
 
 	"github.com/seriouslysean/cairn/internal/store"
 )
@@ -19,6 +22,14 @@ type write struct {
 const (
 	commitPrefix       = "chore(cairn): "
 	notCommittedPrefix = "not committed: "
+)
+
+// How a git step waits for another writer: up to lockTries tries, with a pause between them drawn from
+// [lockPause/2, lockPause*3/2), so writers that collide do not try again in step.
+const (
+	lockExt   = ".lock" // ends the lock file git's error names, in any language: index.lock, or a ref's
+	lockTries = 20
+	lockPause = 50 * time.Millisecond
 )
 
 // wroteIssue records that the write changed the issue issueID.
@@ -46,11 +57,33 @@ func (c *call) commit(command string) {
 	actor, _ := c.actor() // the write has checked it
 	msg := fmt.Sprintf("%s%s %s (by %s)", commitPrefix, command, w.id, actor)
 	g := gitRepo{dir: w.store.Dir}
-	if _, err := g.run("add", "-A", "--", w.path); err != nil {
-		c.warn(notCommittedPrefix + err.Error())
-		return
+	for _, args := range [][]string{{"add", "-A", "--", w.path}, {"commit", "-m", msg, "--", w.path}} {
+		if err := g.step(args...); err != nil {
+			c.warn(notCommittedPrefix + err.Error())
+			return
+		}
 	}
-	if _, err := g.run("commit", "-m", msg, "--", w.path); err != nil {
-		c.warn(notCommittedPrefix + err.Error())
+}
+
+// step runs one git step, and tries again while it fails because another writer is in the way: git's error names a
+// lock file, or HEAD moved while the step ran. A commit given paths reads HEAD before it takes the index lock, so a
+// writer that commits in between makes it fail without naming a lock.
+func (g gitRepo) step(args ...string) error {
+	for try := 1; ; try++ {
+		before := g.head()
+		_, err := g.run(args...)
+		if err == nil || try == lockTries {
+			return err
+		}
+		if inTheWay := strings.Contains(err.Error(), lockExt) || g.head() != before; !inTheWay {
+			return err
+		}
+		time.Sleep(lockPause/2 + rand.N(lockPause))
 	}
+}
+
+// head is HEAD's commit id, or "" when there is none or git cannot say.
+func (g gitRepo) head() string {
+	out, _ := g.run("rev-parse", "--quiet", "--verify", "HEAD")
+	return strings.TrimSpace(string(out))
 }
