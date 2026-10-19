@@ -30,6 +30,16 @@
 // and model, once: no later write changes them, and an issue without them keeps "". comment records them the same way
 // on the comment, and retract records the actor as retracted_by; the other writes check the actor but store it nowhere.
 //
+// Commit on write: when the config's commit is true, a write that succeeds commits what it changed, as it is on disk:
+// its issue's folder, issues/<id>, or for milestone new and milestone edit the milestone's file, milestones/<id>.md.
+// git runs in the tracker's folder, first "git add -A -- <path>", then "git commit -m <message> -- <path>", so nothing
+// else is staged or committed, and an earlier change to the same issue that was never committed goes in too. The
+// message is "chore(cairn): <command> <id> (by <actor>)", where command is new, edit, rm, comment, retract, purge,
+// milestone new or milestone edit, and id is the issue's or the milestone's. git's own config names the author, and
+// the repository's hooks run. When git fails (no git, no repository, a lock, a hook), or config.yml cannot be read
+// after a write that did not need it, the write stands and the command still succeeds, with the warning
+// "not committed: <the error>". A write that fails commits nothing, and init never commits.
+//
 // Commands:
 //   - init: makes .cairn in Env.Dir (it does not look upward). Text: "initialized <the .cairn path>\n". Data:
 //     {"dir": the .cairn path}.
@@ -50,9 +60,10 @@
 //   - ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]: lists issues in store order. Every filter
 //     given must match; --due-before keeps issues with a due date before d. Text: one "<id>\t<status>\t<title>\n"
 //     line per issue. Data: a list of issues without "body" (an empty list, never null).
-//   - --branches, on ls and show, adds what active branches committed, as branchIssues reads it. Without it Cairn
-//     never runs git. With it, failing to read git (no git, no repository, no default branch) is an "error", and a
-//     branch file that cannot be read or does not parse is a warning that names the branch and the issue.
+//   - --branches, on ls and show, adds what active branches committed, as branchIssues reads it. Without it, and
+//     without commit on write, Cairn never runs git. With it, failing to read git (no git, no repository, no default
+//     branch) is an "error", and a branch file that cannot be read or does not parse is a warning that names the
+//     branch and the issue.
 //   - ls --branches: the checkout's rows, then the branch versions, all through the same filters. Text: a branch
 //     version's line is "<id>\t<status>\t<title>\t<branch>\n". Data: every item also has "branch" ("" for the
 //     checkout).
