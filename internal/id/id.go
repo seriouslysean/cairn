@@ -11,18 +11,28 @@ import (
 // Alphabet is Crockford's base32 in lower case: the digits and the letters without i, l, o and u.
 const Alphabet = "0123456789abcdefghjkmnpqrstvwxyz"
 
+// CommentPrefix starts every comment id. The rest of a comment id is 4 characters from Alphabet.
+const CommentPrefix = "c-"
+
+const (
+	minLength     = 4
+	maxLength     = 8
+	commentLength = 4
+	maxTries      = 100
+)
+
 // New returns an id of n characters (4 to 8) that is not in taken. Each character is Alphabet[b&31] for the next
 // byte b read from r, and r is crypto/rand.Reader when nil. It tries at most 100 candidates. It returns an error
 // when n is out of range, when r fails or runs out, or when every candidate is taken.
 func New(n int, taken map[string]bool, r io.Reader) (string, error) {
-	if n < 4 || n > 8 {
+	if n < minLength || n > maxLength {
 		return "", errors.New("id: length must be 4 to 8")
 	}
 	if r == nil {
 		r = rand.Reader
 	}
 	buf := make([]byte, n)
-	for range 100 {
+	for range maxTries {
 		if _, err := io.ReadFull(r, buf); err != nil {
 			return "", err
 		}
@@ -36,17 +46,28 @@ func New(n int, taken map[string]bool, r io.Reader) (string, error) {
 	return "", errors.New("id: no free id after 100 tries")
 }
 
+// NewComment returns a comment id that is not in taken, a set of comment ids. It draws from r as New does.
+func NewComment(taken map[string]bool, r io.Reader) (string, error) {
+	rest := make(map[string]bool, len(taken))
+	for c := range taken {
+		rest[strings.TrimPrefix(c, CommentPrefix)] = true
+	}
+	s, err := New(commentLength, rest, r)
+	if err != nil {
+		return "", err
+	}
+	return CommentPrefix + s, nil
+}
+
 // Valid reports whether s has 4 to 8 characters, all from Alphabet.
 func Valid(s string) bool {
-	if len(s) < 4 || len(s) > 8 {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		if !strings.ContainsRune(Alphabet, rune(s[i])) {
-			return false
-		}
-	}
-	return true
+	return len(s) >= minLength && len(s) <= maxLength && inAlphabet(s)
+}
+
+// ValidComment reports whether s is a comment id: CommentPrefix followed by 4 characters from Alphabet.
+func ValidComment(s string) bool {
+	rest, ok := strings.CutPrefix(s, CommentPrefix)
+	return ok && len(rest) == commentLength && inAlphabet(rest)
 }
 
 // Length is the id length for a tracker that already holds count issues: 4 below 1,000, 5 below 32,000, and 6
@@ -61,13 +82,10 @@ func Length(count int) int {
 	return 6
 }
 
-// ValidComment reports whether s is a comment id: "c-" followed by 4 characters from Alphabet.
-func ValidComment(s string) bool {
-	if len(s) != 6 || s[:2] != "c-" {
-		return false
-	}
-	for i := 2; i < 6; i++ {
-		if !strings.ContainsRune(Alphabet, rune(s[i])) {
+// inAlphabet reports whether every character of s is in Alphabet.
+func inAlphabet(s string) bool {
+	for _, r := range s {
+		if !strings.ContainsRune(Alphabet, r) {
 			return false
 		}
 	}
