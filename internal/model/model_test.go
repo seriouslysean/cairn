@@ -251,6 +251,20 @@ func TestMilestone(t *testing.T) {
 	}
 }
 
+// A milestone id is a file name in milestones/: not empty, no "/", and not starting with ".", which would hide it.
+func TestValidMilestoneID(t *testing.T) {
+	for s, want := range map[string]bool{"v0.4": true, "release-1": true, "a.b": true, "": false, "a/b": false,
+		".hidden": false, "..": false} {
+		if got := ValidMilestoneID(s); got != want {
+			t.Errorf("ValidMilestoneID(%q) = %v, want %v", s, got, want)
+		}
+	}
+	src := "---\nid: .hidden\ntitle: Hidden\nstatus: open\n---\n"
+	if _, err := ParseMilestone(split(t, src)); err == nil {
+		t.Errorf("want an error for\n%s", src)
+	}
+}
+
 func TestConfigDefaults(t *testing.T) {
 	c, err := ParseConfig(nil)
 	if err != nil {
@@ -331,7 +345,8 @@ func TestParseRejectsWrongShape(t *testing.T) {
 
 func TestIssueCreator(t *testing.T) {
 	i := Issue{ID: "7f3k", Title: "t", Status: "open", Due: "2026-11-01", By: "alice", Persona: "skeptic",
-		Model: "example-model-1", Created: at("2026-10-17T19:00:00.000Z"), Updated: at("2026-10-17T19:00:00.000Z"), GitHub: 7}
+		Model: "example-model-1", Created: at("2026-10-17T19:00:00.000Z"), Updated: at("2026-10-17T19:00:00.000Z"),
+		GitHub: 7}
 	if got := keys(i.Fields()); got != "id title status due by persona model created updated github" {
 		t.Errorf("order: %q", got)
 	}

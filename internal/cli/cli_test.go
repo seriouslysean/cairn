@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -175,8 +176,8 @@ func TestIssueJSONShape(t *testing.T) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		t.Fatal(err)
 	}
-	keys := []string{"id", "title", "status", "tags", "milestone", "due", "by", "persona", "model", "created", "updated",
-		"github", "body"}
+	keys := []string{"id", "title", "status", "tags", "milestone", "due", "by", "persona", "model", "created",
+		"updated", "github", "body"}
 	for _, k := range keys {
 		if _, ok := m[k]; !ok {
 			t.Errorf("missing key %q", k)
@@ -257,8 +258,8 @@ func TestActor(t *testing.T) {
 
 func TestFlagForms(t *testing.T) {
 	tr := newTracker(t)
-	if i := tr.issue("new", "--tag", "area:x", "--due=2026-11-01", "Title first or last"); i.Title != "Title first or last" ||
-		i.Due != "2026-11-01" || !reflect.DeepEqual(i.Tags, []string{"area:x"}) {
+	i := tr.issue("new", "--tag", "area:x", "--due=2026-11-01", "Title first or last")
+	if i.Title != "Title first or last" || i.Due != "2026-11-01" || !reflect.DeepEqual(i.Tags, []string{"area:x"}) {
 		t.Fatalf("got %+v", i)
 	}
 	code, out, _ := tr.run("new", "--json", "--", "--looks-like-a-flag")
@@ -489,7 +490,8 @@ func TestNotFoundNamesTheID(t *testing.T) {
 
 func TestConfigWithoutStatuses(t *testing.T) {
 	tr := newTracker(t)
-	if err := os.WriteFile(filepath.Join(tr.dir, ".cairn", "config.yml"), []byte("---\nstatuses: []\n---\n"), 0o644); err != nil {
+	cfg := filepath.Join(tr.dir, ".cairn", "config.yml")
+	if err := os.WriteFile(cfg, []byte("---\nstatuses: []\n---\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	tr.wantError(1, "error", "new", "a")
@@ -528,7 +530,8 @@ func TestNewRecordsCreator(t *testing.T) {
 	if !strings.Contains(string(data), "\nby: bob\npersona: skeptic\nmodel: example-model-1\ncreated: ") {
 		t.Fatalf("file:\n%s", data)
 	}
-	if got := tr.creator("edit", "0123", "--title", "b", "--persona", "other", "--model", "example-model-2"); got != want {
+	got := tr.creator("edit", "0123", "--title", "b", "--persona", "other", "--model", "example-model-2")
+	if got != want {
 		t.Fatalf("edit changed the creator: %+v", got)
 	}
 	if got := tr.creator("show", "0123"); got != want {
@@ -569,5 +572,43 @@ func TestOldIssueKeepsUnknownCreator(t *testing.T) {
 	}
 	if strings.Contains(string(data), "by:") || strings.Contains(string(data), "persona:") {
 		t.Fatalf("file:\n%s", data)
+	}
+}
+
+// A tracker checked out with CRLF line endings, as git does on Windows, reads as it was written, and its files can
+// still be changed. A body given with CRLF line endings reads back as it was given.
+func TestCRLFFiles(t *testing.T) {
+	tr := newTracker(t)
+	i := tr.issue("new", "Title", "--body", "Body", "--milestone", "v1")
+	tr.comment("comment", i.ID, "--kind", "decision", "Agreed")
+	if code, _, errOut := tr.run("milestone", "new", "v1", "One"); code != 0 {
+		t.Fatalf("milestone new: exit %d, %s", code, errOut)
+	}
+	err := filepath.WalkDir(filepath.Join(tr.dir, ".cairn"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(path, bytes.ReplaceAll(data, []byte("\n"), []byte("\r\n")), 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"ls"}, {"show", i.ID}, {"tags"}, {"milestones"}, {"search", "agreed"},
+		{"edit", i.ID, "--status", "open"}, {"comment", i.ID, "--kind", "result", "Done"},
+		{"milestone", "edit", "v1", "--title", "First"}} {
+		if code, _, errOut := tr.run(args...); code != 0 {
+			t.Fatalf("%q: exit %d, %s", args, code, errOut)
+		}
+	}
+	if got := tr.issue("show", i.ID); got.Body != "Body\r\n" || got.Status != "open" {
+		t.Fatalf("show: %+v", got)
+	}
+	added := tr.issue("new", "CRLF body", "--body", "a\r\nb")
+	if got := tr.issue("show", added.ID); added.Body != "a\r\nb\n" || got.Body != added.Body {
+		t.Fatalf("new gave %q, show gives %q", added.Body, got.Body)
 	}
 }

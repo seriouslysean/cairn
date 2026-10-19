@@ -205,8 +205,8 @@ func TestSearchSkipsRetractedComments(t *testing.T) {
 func TestSearchJSONShape(t *testing.T) {
 	tr := searchTracker(t)
 	items := tr.list("search", "row")
-	keys := []string{"id", "title", "status", "tags", "milestone", "due", "by", "persona", "model", "created", "updated",
-		"github", "matches"}
+	keys := []string{"id", "title", "status", "tags", "milestone", "due", "by", "persona", "model", "created",
+		"updated", "github", "matches"}
 	for _, it := range items {
 		for _, k := range keys {
 			if _, ok := it[k]; !ok {

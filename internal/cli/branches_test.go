@@ -368,7 +368,8 @@ func TestBranchesBrokenFile(t *testing.T) {
 	if code != 0 || out != good+"\tbacklog\tGood\tbad\n" {
 		t.Fatalf("exit %d, %q", code, out)
 	}
-	if !strings.HasPrefix(errOut, "cairn: warning: branch bad: issue "+broken+": ") || strings.Count(errOut, "\n") != 1 {
+	if !strings.HasPrefix(errOut, "cairn: warning: branch bad: issue "+broken+": ") ||
+		strings.Count(errOut, "\n") != 1 {
 		t.Fatalf("want one warning naming the branch and the issue: %q", errOut)
 	}
 }
@@ -384,7 +385,8 @@ func TestBranchesRemovedIssue(t *testing.T) {
 	}
 	tr.commit(t0.Add(-time.Hour), "rm")
 	tr.git("switch", "-q", "main")
-	if code, out, errOut := tr.run("ls", "--branches"); code != 0 || out != a+"\tbacklog\tKept on main\n" || errOut != "" {
+	code, out, errOut := tr.run("ls", "--branches")
+	if code != 0 || out != a+"\tbacklog\tKept on main\n" || errOut != "" {
 		t.Fatalf("exit %d, %q, %q", code, out, errOut)
 	}
 	if code, out, _ := tr.run("show", a, "--branches"); code != 0 || strings.Contains(out, "=== branch") {

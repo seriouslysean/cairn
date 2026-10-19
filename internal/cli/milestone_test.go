@@ -54,7 +54,8 @@ func TestMilestoneNew(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %v\nwant %v", got, want)
 	}
-	if f := tr.milestoneFile("v0.4"); f != "---\nid: v0.4\ntitle: First release\nstatus: backlog\ndue: 2026-12-01\n---\n" {
+	wantFile := "---\nid: v0.4\ntitle: First release\nstatus: backlog\ndue: 2026-12-01\n---\n"
+	if f := tr.milestoneFile("v0.4"); f != wantFile {
 		t.Fatalf("file: %q", f)
 	}
 	if code, out, errOut := tr.run("milestone", "new", "beta", "Beta", "--as", "bob", "--persona", "skeptic",
@@ -238,5 +239,23 @@ func TestHelpListsMilestone(t *testing.T) {
 	_, out, _ := tr.run("help")
 	if !slices.Contains(strings.Fields(out), "milestone") {
 		t.Errorf("help does not list milestone: %q", out)
+	}
+}
+
+// An issue's milestone follows the rule a milestone id does, so every milestone an issue names can get a file. ""
+// still means no milestone.
+func TestIssueMilestoneIsAMilestoneID(t *testing.T) {
+	tr := newTracker(t)
+	i := tr.issue("new", "a", "--milestone", "v1")
+	for _, bad := range []string{".hidden", "..", "a/b"} {
+		tr.wantError(2, "usage", "new", "b", "--milestone", bad)
+		tr.wantError(2, "usage", "edit", i.ID, "--milestone", bad)
+		tr.wantError(2, "usage", "milestone", "new", bad, "Title")
+	}
+	if code, _, errOut := tr.run("milestone", "new", i.Milestone, "One"); code != 0 {
+		t.Fatalf("milestone new: exit %d, %s", code, errOut)
+	}
+	if got := tr.issue("edit", i.ID, "--milestone", ""); got.Milestone != "" {
+		t.Fatalf("an empty --milestone clears it: %+v", got)
 	}
 }

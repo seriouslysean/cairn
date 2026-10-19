@@ -108,14 +108,20 @@ func (c Comment) Retracted() bool {
 	return c.RetractedBy != ""
 }
 
-// ValidMilestoneName reports whether s has no "/". Every milestone id, and the milestone an issue names, must pass:
-// a milestone's id is its file name.
-func ValidMilestoneName(s string) bool {
-	return !strings.Contains(s, "/")
+// What a milestone id, which is a file name in milestones/, must not contain (pathSep) or start with (hiddenPrefix).
+const (
+	pathSep      = "/" // it is one name, not a path
+	hiddenPrefix = "." // a name that starts with it is hidden, as temporary files are
+)
+
+// ValidMilestoneID reports whether s can name a milestone: it is not empty, has no "/", and does not start with ".".
+// The milestone an issue names must pass too, unless it is "", so that milestone can always get a file.
+func ValidMilestoneID(s string) bool {
+	return s != "" && !strings.Contains(s, pathSep) && !strings.HasPrefix(s, hiddenPrefix)
 }
 
-// Milestone is one file in milestones/. Its id is its file name without ".md" and is any non-empty name without "/"
-// (for example "v0.4"). Required keys: id, title, status. Due is left out of the file when empty.
+// Milestone is one file in milestones/. Its id is its file name without ".md" (for example "v0.4") and passes
+// ValidMilestoneID. Required keys: id, title, status. Due is left out of the file when empty.
 type Milestone struct {
 	ID     string
 	Title  string
@@ -255,8 +261,8 @@ func ParseMilestone(fields []doc.Field, body []byte) (Milestone, error) {
 	if err := r.done(keyID, keyTitle, keyStatus); err != nil {
 		return Milestone{}, err
 	}
-	if !ValidMilestoneName(m.ID) {
-		return Milestone{}, fmt.Errorf("model: milestone id %q must not contain \"/\"", m.ID)
+	if !ValidMilestoneID(m.ID) {
+		return Milestone{}, fmt.Errorf("model: milestone id %q must not contain \"/\" or start with \".\"", m.ID)
 	}
 	m.Extra = r.extra()
 	return m, nil

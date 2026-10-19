@@ -105,14 +105,15 @@ func TestFindNone(t *testing.T) {
 
 func TestConfig(t *testing.T) {
 	s := newStore(t)
-	if err := os.WriteFile(filepath.Join(s.Dir, "config.yml"), []byte("---\nstatuses: [todo, done]\n---\n"), 0o644); err != nil {
+	cfg := filepath.Join(s.Dir, "config.yml")
+	if err := os.WriteFile(cfg, []byte("---\nstatuses: [todo, done]\n---\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c, err := s.Config()
 	if err != nil || !reflect.DeepEqual(c.Statuses, []string{"todo", "done"}) || c.DupeText != 0.6 {
 		t.Fatalf("got %+v, %v", c, err)
 	}
-	if err := os.Remove(filepath.Join(s.Dir, "config.yml")); err != nil {
+	if err := os.Remove(cfg); err != nil {
 		t.Fatal(err)
 	}
 	if c, err := s.Config(); err != nil || !reflect.DeepEqual(c, model.DefaultConfig()) {
@@ -244,6 +245,41 @@ func TestReadIssue(t *testing.T) {
 	}
 }
 
+// LoadComments reads an issue's comments without issue.md, for a caller that already has the issue, as search does
+// after ListIssues.
+func TestLoadComments(t *testing.T) {
+	s := newStore(t)
+	c1, c2 := comment("c-0001", t0.Add(time.Minute)), comment("c-0002", t0)
+	save(t, s, issue("aaaa", t0), c1, c2)
+	folder := filepath.Join(s.Dir, "issues", "aaaa")
+	for name, data := range map[string]string{"issue.md": "not frontmatter", "notes.txt": "junk"} {
+		if err := os.WriteFile(filepath.Join(folder, name), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := s.LoadIssue("aaaa"); err == nil {
+		t.Fatal("LoadIssue read an issue.md that does not parse")
+	}
+	cs, err := s.LoadComments("aaaa")
+	if err != nil || !reflect.DeepEqual(cs, []model.Comment{c2, c1}) {
+		t.Fatalf("got  %+v %v\nwant %+v", cs, err, []model.Comment{c2, c1})
+	}
+	if err := os.Mkdir(filepath.Join(s.Dir, "issues", "zzzz"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, issueID := range []string{"yyyy", "zzzz", "../x"} {
+		if _, err := s.LoadComments(issueID); !errors.Is(err, ErrNotFound) {
+			t.Errorf("LoadComments(%q): %v", issueID, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(folder, "c-0002.md"), []byte("nope"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LoadComments("aaaa"); err == nil || errors.Is(err, ErrNotFound) {
+		t.Errorf("a comment that does not parse: %v", err)
+	}
+}
+
 func TestListIssues(t *testing.T) {
 	s := newStore(t)
 	a, b, c := issue("aaaa", t0.Add(time.Hour)), issue("bbbb", t0), issue("cccc", t0.Add(time.Hour))
@@ -314,7 +350,8 @@ func TestListIssuesErrors(t *testing.T) {
 	if got, err := s.ListIssues(); err != nil || len(got) != 1 {
 		t.Fatalf("folder without issue.md: %v, %v", got, err)
 	}
-	if err := os.WriteFile(filepath.Join(s.Dir, "issues", "bbbb", "issue.md"), []byte("not frontmatter"), 0o644); err != nil {
+	broken := filepath.Join(s.Dir, "issues", "bbbb", "issue.md")
+	if err := os.WriteFile(broken, []byte("not frontmatter"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ListIssues(); err == nil {

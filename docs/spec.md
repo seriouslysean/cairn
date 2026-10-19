@@ -47,6 +47,7 @@ What is wrong, why it matters, and what "done" means.
 `github` appears only after a sync. Dates are `YYYY-MM-DD`. Times are UTC RFC 3339 with exactly three fraction
 digits, such as `2026-10-17T19:20:00.000Z`, so every time is 24 characters and times sort the same as text as they
 do as times. Files written by v0.1.0, which dropped trailing zeros, still load.
+Frontmatter lines may end in CRLF, as in a Windows checkout. Cairn writes them with LF and keeps a body as it is.
 
 ### Comment
 ```
@@ -65,7 +66,9 @@ A retracted comment adds `retracted_by`, `retracted_at`, `retracted_reason` and,
 
 ### Milestone
 Same frontmatter as an issue (`id`, `title`, `status`, `due`), and a body. It has no comments. Its status is one of the
-config's statuses. Commands keep the body but don't write it; it is edited by hand.
+config's statuses. Commands keep the body but don't write it; it is edited by hand. Its id is its file name without
+`.md`: not empty, with no `/`, and not starting with `.`. The milestone an issue names follows the same rule, or is
+empty.
 
 ### Config
 `config.yml` is frontmatter with an empty body, like every other file:
@@ -78,7 +81,8 @@ embeddings_url: http://127.0.0.1:8080/v1/embeddings
 dupe_text: 0.6
 ---
 ```
-Every key is optional. Shown above with the defaults, except that `github_repo` and `embeddings_url` are off when absent.
+Every key is optional. Shown above with the defaults, except that `github_repo` and `embeddings_url` are off when
+absent.
 
 ## IDs
 - Issues: 4 lowercase characters from Crockford's base32 alphabet (`0-9a-z` without `i l o u`), checked against existing

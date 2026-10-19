@@ -31,8 +31,8 @@ Read-only context:
 Done when: all three packages pass their tests, use the standard library only, and keep their exported signatures.
 
 ## Step 2: model and layout
-- `internal/model`: the `Issue`, `Comment`, `Milestone` and `Config` types, converted to and from `doc.Field` lists, with
-  the spec's defaults.
+- `internal/model`: the `Issue`, `Comment`, `Milestone` and `Config` types, converted to and from `doc.Field` lists,
+  with the spec's defaults.
 - `internal/store`:
   - find `.cairn/` by walking up from the working folder;
   - `init`;
@@ -127,7 +127,8 @@ Read-only context:
 - internal/store/store_test.go
 
 ## Version 0.1.0
-A working tracker on one checkout: steps 1 to 6 (with 4b), then the release step below. Everything under "Later" comes after.
+A working tracker on one checkout: steps 1 to 6 (with 4b), then the release step below. Everything under "Later" comes
+after.
 
 Release step:
 - CI runs `scripts/check.sh` on every pull request, and `go vet` and `go test` on Go 1.24, the oldest version `go.mod`
