@@ -47,6 +47,7 @@ What is wrong, why it matters, and what "done" means.
 `github` appears only after a sync. Dates are `YYYY-MM-DD`. Times are UTC RFC 3339 with exactly three fraction
 digits, such as `2026-10-17T19:20:00.000Z`, so every time is 24 characters and times sort the same as text as they
 do as times. Files written by v0.1.0, which dropped trailing zeros, still load.
+Frontmatter lines may end in CRLF, as in a Windows checkout. Cairn writes them with LF and keeps a body as it is.
 
 ### Comment
 ```

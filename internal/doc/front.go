@@ -4,7 +4,8 @@
 // then a line "---". A key is a lower-case letter followed by lower-case letters, digits, "_" or "-". The value
 // follows the first ": " (or is empty when the line ends at "key:"). A value is plain text, a double-quoted Go
 // string literal (it starts with `"`), or a flow list (it starts with "[" and ends with "]"), whose items are split
-// on "," and trimmed. Blank lines inside the frontmatter are skipped; any other line is an error.
+// on "," and trimmed. Blank lines inside the frontmatter are skipped; any other line is an error. A frontmatter line
+// can end in "\r\n" as well as "\n", as files checked out on Windows do; Format writes "\n".
 package doc
 
 import (
@@ -27,6 +28,8 @@ const (
 	listClose = "]"
 	listSep   = ","
 	listJoin  = listSep + " " // between the items Format writes
+	newline   = "\n"
+	cr        = "\r" // before newline in a CRLF line ending
 )
 
 // Field is one frontmatter line. A scalar sets Value and leaves List nil. A list sets IsList and List; an empty
@@ -38,12 +41,12 @@ type Field struct {
 	IsList bool
 }
 
-// Parse splits a file into its fields, in order, and the body: everything after the closing "---" line.
-// It returns an error for a missing opening or closing line, a malformed line or key, a duplicate key, an empty
-// list item, or a quoted value that does not unquote.
+// Parse splits a file into its fields, in order, and the body: everything after the closing "---" line, as the file
+// has it. It returns an error for a missing opening or closing line, a malformed line or key, a duplicate key, an
+// empty list item, or a quoted value that does not unquote.
 func Parse(b []byte) ([]Field, []byte, error) {
-	first, rest, ok := bytes.Cut(b, []byte("\n"))
-	if !ok || string(first) != delimiter {
+	first, rest, ok := cutLine(b)
+	if !ok || first != delimiter {
 		return nil, nil, errors.New("doc: missing opening ---")
 	}
 	var fields []Field
@@ -52,12 +55,11 @@ func Parse(b []byte) ([]Field, []byte, error) {
 		if len(rest) == 0 {
 			return nil, nil, errors.New("doc: missing closing ---")
 		}
-		line, after, _ := bytes.Cut(rest, []byte("\n"))
+		s, after, _ := cutLine(rest)
 		rest = after
-		if string(line) == delimiter {
+		if s == delimiter {
 			return fields, rest, nil
 		}
-		s := string(line)
 		if strings.TrimSpace(s) == "" {
 			continue
 		}
@@ -73,6 +75,12 @@ func Parse(b []byte) ([]Field, []byte, error) {
 	}
 }
 
+// cutLine cuts b at its first newline into the line before it, without the CR of a CRLF ending, and the rest.
+func cutLine(b []byte) (line string, rest []byte, ok bool) {
+	l, rest, ok := bytes.Cut(b, []byte(newline))
+	return string(bytes.TrimSuffix(l, []byte(cr))), rest, ok
+}
+
 // Format writes fields and body back as "---\n", one "key: value\n" per field, "---\n", then body.
 // A scalar is written with strconv.Quote when it is empty, has leading or trailing space, starts with `"`, "[" or
 // "#", or contains ": " or a newline; otherwise it is written as is. A list is written as "[a, b]". It returns an
@@ -81,7 +89,7 @@ func Parse(b []byte) ([]Field, []byte, error) {
 // For any file Format wrote, Format(Parse(file)) gives the same bytes.
 func Format(fields []Field, body []byte) ([]byte, error) {
 	var out bytes.Buffer
-	out.WriteString(delimiter + "\n")
+	out.WriteString(delimiter + newline)
 	seen := map[string]bool{}
 	for _, f := range fields {
 		if !validKey(f.Key) {
@@ -102,9 +110,9 @@ func Format(fields []Field, body []byte) ([]byte, error) {
 		} else {
 			out.WriteString(f.Value)
 		}
-		out.WriteString("\n")
+		out.WriteString(newline)
 	}
-	out.WriteString(delimiter + "\n")
+	out.WriteString(delimiter + newline)
 	out.Write(body)
 	return out.Bytes(), nil
 }
@@ -113,13 +121,13 @@ func Format(fields []Field, body []byte) ([]byte, error) {
 // space, starts like a quoted value, a list or a comment, or holds a separator or a newline.
 func needsQuote(v string) bool {
 	return v == "" || strings.TrimSpace(v) != v || strings.ContainsAny(v[:1], quote+listOpen+comment) ||
-		strings.Contains(v, separator) || strings.Contains(v, "\n")
+		strings.Contains(v, separator) || strings.Contains(v, newline)
 }
 
 // badItem reports whether a list item cannot be written: it is empty, has leading or trailing space, or holds a
 // list character or a newline.
 func badItem(it string) bool {
-	return it == "" || strings.TrimSpace(it) != it || strings.ContainsAny(it, listSep+listOpen+listClose+"\n")
+	return it == "" || strings.TrimSpace(it) != it || strings.ContainsAny(it, listSep+listOpen+listClose+newline)
 }
 
 // validKey reports whether k is a lower-case letter followed by lower-case letters, digits, "_" or "-".
