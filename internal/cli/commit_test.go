@@ -1,20 +1,15 @@
 package cli
 
 import (
-	"bytes"
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 )
 
 // writeConfig replaces the tracker's config.yml with text, and leaves the change uncommitted.
@@ -176,64 +171,8 @@ func TestCommitTakesOnlyItsPaths(t *testing.T) {
 	}
 }
 
-// A lock another writer releases soon is waited for: the write commits, with no warning.
-func TestCommitWaitsForALock(t *testing.T) {
-	tr := commitTracker(t, "")
-	lock := filepath.Join(tr.dir, ".git", "index.lock")
-	if err := os.WriteFile(lock, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	released := make(chan error, 1)
-	go func() {
-		time.Sleep(200 * time.Millisecond)
-		released <- os.Remove(lock)
-	}()
-	a := tr.write("new", "a")
-	if err := <-released; err != nil {
-		t.Fatal(err)
-	}
-	if _, subject, _ := tr.head(); subject != "chore(cairn): new "+a+" (by alice)" {
-		t.Fatalf("HEAD: %q", subject)
-	}
-}
-
-// Writers that start at the same moment take turns with the index lock, and every write is committed.
-func TestCommitConcurrentWrites(t *testing.T) {
-	tr := commitTracker(t, "")
-	before := strings.TrimSpace(tr.git("rev-list", "--count", "HEAD"))
-	const writers = 3
-	failed := make(chan string, writers)
-	var wg sync.WaitGroup
-	for n := range writers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			var out, errOut bytes.Buffer
-			env := Env{Dir: tr.dir, Stdout: &out, Stderr: &errOut, Getenv: func(k string) string { return tr.env[k] }}
-			if code := Run([]string{"new", fmt.Sprintf("Writer %d", n)}, env); code != 0 || errOut.Len() > 0 {
-				failed <- fmt.Sprintf("writer %d: exit %d, stderr %q", n, code, errOut.String())
-			}
-		}()
-	}
-	wg.Wait()
-	close(failed)
-	for f := range failed {
-		t.Error(f)
-	}
-	if st := tr.status(); st != nil {
-		t.Fatalf("left uncommitted: %q", st)
-	}
-	n, err := strconv.Atoi(before)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.TrimSpace(tr.git("rev-list", "--count", "HEAD")); got != strconv.Itoa(n+writers) {
-		t.Fatalf("%s commits, want %d", got, n+writers)
-	}
-}
-
-// When git fails, here because another writer holds the index lock past the wait, the write stands and the command
-// succeeds with a warning, in both output modes. The next write to the same issue commits what was left.
+// When git fails, here because another writer holds the index lock, the write stands and the command succeeds with a
+// warning, in both output modes. The next write to the same issue commits what was left.
 func TestCommitFailureKeepsTheWrite(t *testing.T) {
 	tr := commitTracker(t, "")
 	a := tr.write("new", "a")
@@ -283,15 +222,14 @@ func TestCommitFailureKeepsTheWrite(t *testing.T) {
 	}
 }
 
-// A hook that refuses the commit is not another writer, even when its message names a lock file such as a package
-// manager's: it runs once, and the write stands with the warning.
-func TestCommitHookRunsOnce(t *testing.T) {
+// A hook that refuses the commit runs once, and the write stands with the warning.
+func TestCommitRefusedByAHook(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the hook is a shell script")
 	}
 	tr := commitTracker(t, "")
 	runs := filepath.Join(t.TempDir(), "runs")
-	hook := "#!/bin/sh\necho run >> '" + runs + "'\necho 'yarn.lock is out of date' >&2\nexit 1\n"
+	hook := "#!/bin/sh\necho run >> '" + runs + "'\necho 'refused' >&2\nexit 1\n"
 	if err := os.WriteFile(filepath.Join(tr.dir, ".git", "hooks", "pre-commit"), []byte(hook), 0o755); err != nil {
 		t.Fatal(err)
 	}
