@@ -104,7 +104,8 @@
 //     {"usage": commandUsage, "rules": agentRules}.
 //
 // A tag is non-empty with no space, ",", "[" or "]". When it has a ":", the part before the first ":" must be one of
-// the config's tag_groups. A milestone has no "/".
+// the config's tag_groups. A milestone, as an id or as what an issue names, has no "/" and does not start with ".";
+// an issue's milestone can also be "", for none.
 //
 // A milestone in data is {"id", "title", "status", "due"}, every key always present ("" when due is not set).
 //

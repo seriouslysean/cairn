@@ -32,7 +32,6 @@ const (
 	ignoreFile    = ".gitignore"
 	ignored       = ".index/\n"
 	docExt        = ".md" // issue, comment and milestone files
-	hiddenPrefix  = "."   // starts the names ListMilestones skips, temporary files among them
 )
 
 const (
@@ -330,7 +329,7 @@ func (s *Store) ListMilestones() ([]model.Milestone, error) {
 	var milestones []model.Milestone
 	for _, e := range entries {
 		milestoneID, ok := strings.CutSuffix(e.Name(), docExt)
-		if e.IsDir() || !ok || !ValidMilestoneID(milestoneID) {
+		if e.IsDir() || !ok || !model.ValidMilestoneID(milestoneID) {
 			continue
 		}
 		m, err := s.LoadMilestone(milestoneID)
@@ -343,17 +342,11 @@ func (s *Store) ListMilestones() ([]model.Milestone, error) {
 	return milestones, nil
 }
 
-// ValidMilestoneID reports whether id can name a milestone file: it is not empty, has no "/" and does not start with
-// ".", which ListMilestones would skip.
-func ValidMilestoneID(milestoneID string) bool {
-	return milestoneID != "" && model.ValidMilestoneName(milestoneID) && !strings.HasPrefix(milestoneID, hiddenPrefix)
-}
-
 // LoadMilestone reads milestones/<id>.md. It returns ErrNotFound when the file is missing or the id cannot name one
 // (empty, with a "/", or starting with "."), and an error when the file does not parse or its id does not match its
 // file name.
 func (s *Store) LoadMilestone(milestoneID string) (model.Milestone, error) {
-	if !ValidMilestoneID(milestoneID) {
+	if !model.ValidMilestoneID(milestoneID) {
 		return model.Milestone{}, ErrNotFound
 	}
 	path := s.milestonePath(milestoneID)
@@ -377,7 +370,7 @@ func (s *Store) LoadMilestone(milestoneID string) (model.Milestone, error) {
 // SaveMilestone writes milestones/<m.ID>.md, making the folder when needed. An id that is empty, has a "/" or starts
 // with "." is an error.
 func (s *Store) SaveMilestone(m model.Milestone) error {
-	if !ValidMilestoneID(m.ID) {
+	if !model.ValidMilestoneID(m.ID) {
 		return fmt.Errorf("store: bad milestone id %q", m.ID)
 	}
 	if err := os.MkdirAll(filepath.Join(s.Dir, milestonesDir), dirPerm); err != nil {

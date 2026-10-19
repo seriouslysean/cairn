@@ -334,10 +334,10 @@ func editTags(tags, edits []string) []string {
 	return tags
 }
 
-// checkIssueMilestone checks the milestone an issue names, which need not have a file yet.
+// checkIssueMilestone checks the milestone an issue names, which need not have a file yet: a milestone id, or "".
 func checkIssueMilestone(m string) error {
-	if !model.ValidMilestoneName(m) {
-		return usageError(`milestone must not contain "/"`)
+	if m != "" && !model.ValidMilestoneID(m) {
+		return usageError(`milestone must not contain "/" or start with "."`)
 	}
 	return nil
 }

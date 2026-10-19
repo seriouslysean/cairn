@@ -63,7 +63,7 @@ func compareMilestones(a, b milestoneCountJSON) int {
 
 func runMilestoneNew(c *call) (output, error) {
 	milestoneID, title := c.args[0], c.args[1]
-	if !store.ValidMilestoneID(milestoneID) {
+	if !model.ValidMilestoneID(milestoneID) {
 		return output{}, usageError(`milestone id must not be empty, contain "/" or start with "."`)
 	}
 	if blank(title) {
