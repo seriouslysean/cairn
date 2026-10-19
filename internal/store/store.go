@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -113,11 +114,27 @@ func (s *Store) LoadIssue(idStr string) (model.Issue, []model.Comment, error) {
 		}
 		return model.Issue{}, nil, err
 	}
-	issueData, err := os.ReadFile(filepath.Join(folder, "issue.md"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return model.Issue{}, nil, ErrNotFound
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			names = append(names, e.Name())
 		}
+	}
+	return ParseIssueFiles(idStr, names, func(name string) ([]byte, error) {
+		return os.ReadFile(filepath.Join(folder, name))
+	})
+}
+
+// ParseIssueFiles reads an issue folder the way LoadIssue does, from the names of the files in it (not its
+// subfolders) and read, which returns a file's contents. It lets an issue be read from somewhere other than the
+// working tree, such as a git commit. It returns ErrNotFound when names has no issue.md.
+func ParseIssueFiles(idStr string, names []string, read func(name string) ([]byte, error)) (model.Issue,
+	[]model.Comment, error) {
+	if !id.Valid(idStr) || !slices.Contains(names, "issue.md") {
+		return model.Issue{}, nil, ErrNotFound
+	}
+	issueData, err := read("issue.md")
+	if err != nil {
 		return model.Issue{}, nil, err
 	}
 	fields, body, err := doc.Parse(issueData)
@@ -132,11 +149,7 @@ func (s *Store) LoadIssue(idStr string) (model.Issue, []model.Comment, error) {
 		return model.Issue{}, nil, fmt.Errorf("store: issue id %q does not match folder %q", issue.ID, idStr)
 	}
 	var comments []model.Comment
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
+	for _, name := range names {
 		if !strings.HasPrefix(name, "c-") || !strings.HasSuffix(name, ".md") {
 			continue
 		}
@@ -144,7 +157,7 @@ func (s *Store) LoadIssue(idStr string) (model.Issue, []model.Comment, error) {
 		if !id.ValidComment(commentID) {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(folder, name))
+		data, err := read(name)
 		if err != nil {
 			return model.Issue{}, nil, err
 		}
