@@ -17,6 +17,25 @@ import (
 // inherit that.
 func gitTracker(t *testing.T, branch, sub string) *tracker {
 	t.Helper()
+	isolateGit(t)
+	root := t.TempDir()
+	dir := filepath.Join(root, sub)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tr := &tracker{t: t, dir: dir, now: t0, env: map[string]string{"CAIRN_ACTOR": "alice"}, rnd: &seq{}}
+	tr.git("init", "-q", "-b", branch, root)
+	if code, _, errOut := tr.run("init"); code != 0 {
+		t.Fatalf("init: exit %d: %s", code, errOut)
+	}
+	tr.commit(t0.Add(-48*time.Hour), "start")
+	return tr
+}
+
+// isolateGit skips the test when git is not installed, and otherwise runs git, for the test and for Cairn, with no
+// global or system config, no GIT_DIR-like overrides, and alice as author and committer.
+func isolateGit(t *testing.T) {
+	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
 	}
@@ -32,18 +51,6 @@ func gitTracker(t *testing.T, branch, sub string) *tracker {
 	for _, k := range []string{"GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"} {
 		t.Setenv(k, "alice@example.com")
 	}
-	root := t.TempDir()
-	dir := filepath.Join(root, sub)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	tr := &tracker{t: t, dir: dir, now: t0, env: map[string]string{"CAIRN_ACTOR": "alice"}, rnd: &seq{}}
-	tr.git("init", "-q", "-b", branch, root)
-	if code, _, errOut := tr.run("init"); code != 0 {
-		t.Fatalf("init: exit %d: %s", code, errOut)
-	}
-	tr.commit(t0.Add(-48*time.Hour), "start")
-	return tr
 }
 
 // git runs git in the tracker's folder and returns its output.

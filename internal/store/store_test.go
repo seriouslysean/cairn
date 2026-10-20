@@ -562,3 +562,193 @@ func TestLoadMilestoneErrors(t *testing.T) {
 		}
 	}
 }
+
+// worktree makes the files git keeps for a linked worktree, without git: a main checkout main with a .git folder, the
+// worktree's git folder main/.git/worktrees/wt holding commondir, and the worktree wt, whose .git file points there.
+// gitdir and commondir are what those two files say; "" means the usual absolute gitdir and "../..".
+func worktree(t *testing.T, root, main, wt, gitdir, commondir string) {
+	t.Helper()
+	wtGit := filepath.Join(root, main, ".git", "worktrees", "wt")
+	if gitdir == "" {
+		gitdir = wtGit
+	}
+	if commondir == "" {
+		commondir = "../.."
+	}
+	for _, d := range []string{wtGit, filepath.Join(root, wt)} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		filepath.Join(wtGit, "commondir"): commondir + "\n",
+		filepath.Join(root, wt, ".git"):   "gitdir: " + gitdir + "\n",
+		filepath.Join(wtGit, "gitdir"):    filepath.Join(root, wt, ".git") + "\n",
+	}
+	for name, text := range files {
+		if err := os.WriteFile(name, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// ownBranch makes dir/.cairn a tracker on its own branch: Init, plus a .git folder of its own.
+func ownBranch(t *testing.T, dir string) *Store {
+	t.Helper()
+	s, err := Init(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(s.Dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// A linked worktree outside the main checkout finds the main checkout's tracker when it is on its own branch, from
+// the worktree's top folder or below it, with the worktree's files written either way git writes them.
+func TestFindWorktree(t *testing.T) {
+	for name, files := range map[string]struct{ gitdir, commondir string }{
+		"absolute gitdir":    {},
+		"relative gitdir":    {gitdir: filepath.Join("..", "main", ".git", "worktrees", "wt")},
+		"absolute commondir": {commondir: "ABS"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			commondir := files.commondir
+			if commondir == "ABS" {
+				commondir = filepath.Join(root, "main", ".git")
+			}
+			worktree(t, root, "main", "wt", files.gitdir, commondir)
+			s := ownBranch(t, filepath.Join(root, "main"))
+			deep := filepath.Join(root, "wt", "a", "b")
+			if err := os.MkdirAll(deep, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for _, start := range []string{filepath.Join(root, "wt"), deep} {
+				got, err := Find(start)
+				if err != nil || got.Dir != s.Dir {
+					t.Errorf("Find(%q) = %v, %v; want %s", start, got, err, s.Dir)
+				}
+			}
+		})
+	}
+}
+
+// A worktree's own .cairn, such as a tracker committed on its branch, comes before the main checkout's.
+func TestFindWorktreeOwnTrackerFirst(t *testing.T) {
+	root := t.TempDir()
+	worktree(t, root, "main", "wt", "", "")
+	ownBranch(t, filepath.Join(root, "main"))
+	own, err := Init(filepath.Join(root, "wt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Find(filepath.Join(root, "wt")); err != nil || got.Dir != own.Dir {
+		t.Fatalf("got %v, %v; want %s", got, err, own.Dir)
+	}
+}
+
+// Only a link to a main checkout's tracker on its own branch counts. Anything else is not a link, and the walk goes
+// on up as if the .git file were not there.
+func TestFindWorktreeNotFollowed(t *testing.T) {
+	t.Run("tracker in the main checkout's tree", func(t *testing.T) {
+		root := t.TempDir()
+		worktree(t, root, "main", "wt", "", "")
+		if _, err := Init(filepath.Join(root, "main")); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := Find(filepath.Join(root, "wt")); !errors.Is(err, ErrNoTracker) {
+			t.Fatalf("got %v, %v", got, err)
+		}
+	})
+	t.Run("no commondir, as in a submodule", func(t *testing.T) {
+		root := t.TempDir()
+		worktree(t, root, "main", "wt", "", "")
+		ownBranch(t, filepath.Join(root, "main"))
+		if err := os.Remove(filepath.Join(root, "main", ".git", "worktrees", "wt", "commondir")); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := Find(filepath.Join(root, "wt")); !errors.Is(err, ErrNoTracker) {
+			t.Fatalf("got %v, %v", got, err)
+		}
+	})
+	t.Run("bare repository", func(t *testing.T) {
+		// a/repo.git is bare, with a tracker on its own branch beside it; the worktree is b/wt, so the walk up from it
+		// never passes a/.
+		root := t.TempDir()
+		bareWt := filepath.Join(root, "a", "repo.git", "worktrees", "wt")
+		if err := os.MkdirAll(bareWt, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(bareWt, "commondir"), []byte("../..\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		ownBranch(t, filepath.Join(root, "a"))
+		wt := filepath.Join(root, "b", "wt")
+		if err := os.MkdirAll(wt, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+bareWt+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := Find(wt); !errors.Is(err, ErrNoTracker) {
+			t.Fatalf("got %v, %v", got, err)
+		}
+	})
+	t.Run("main checkout moved", func(t *testing.T) {
+		root := t.TempDir()
+		worktree(t, root, "main", "wt", "", "")
+		ownBranch(t, filepath.Join(root, "main"))
+		if err := os.Rename(filepath.Join(root, "main"), filepath.Join(root, "moved")); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := Find(filepath.Join(root, "wt")); !errors.Is(err, ErrNoTracker) {
+			t.Fatalf("got %v, %v", got, err)
+		}
+	})
+	t.Run(".git file that is not a gitfile", func(t *testing.T) {
+		root := t.TempDir()
+		worktree(t, root, "main", "wt", "", "")
+		ownBranch(t, filepath.Join(root, "main"))
+		if err := os.WriteFile(filepath.Join(root, "wt", ".git"), []byte("not a gitfile\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := Find(filepath.Join(root, "wt")); !errors.Is(err, ErrNoTracker) {
+			t.Fatalf("got %v, %v", got, err)
+		}
+	})
+}
+
+func TestOwnBranch(t *testing.T) {
+	s := newStore(t)
+	if s.OwnBranch() {
+		t.Fatal("a tracker in the tree reports its own branch")
+	}
+	if err := os.Mkdir(filepath.Join(s.Dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !s.OwnBranch() {
+		t.Fatal("a tracker with its own .git does not report its own branch")
+	}
+}
+
+func TestSaveConfig(t *testing.T) {
+	s := newStore(t)
+	cfg := model.DefaultConfig()
+	cfg.Commit = true
+	if err := s.SaveConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Config()
+	if err != nil || !reflect.DeepEqual(got, cfg) {
+		t.Fatalf("got %+v, %v; want %+v", got, err, cfg)
+	}
+	want, err := doc.Format(cfg.Fields(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text, _ := os.ReadFile(filepath.Join(s.Dir, "config.yml")); string(text) != string(want) {
+		t.Fatalf("config.yml %q, want %q", text, want)
+	}
+}
