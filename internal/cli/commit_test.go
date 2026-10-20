@@ -129,6 +129,24 @@ func TestCommitOnWrite(t *testing.T) {
 	check("chore(cairn): rm "+a+" (by alice)", "D\t"+issueFile)
 }
 
+// A write commits its issue's whole folder, so another writer's temporary file in that folder, half written, must not
+// go in with it (seriouslysean/cairn#32). The tracker's .gitignore keeps git from seeing those files at all.
+func TestCommitSkipsTemporaryFiles(t *testing.T) {
+	tr := commitTracker(t, "")
+	a := tr.write("new", "A title")
+	temp := filepath.Join(tr.dir, ".cairn", "issues", a, ".cairn-tmp-123")
+	if err := os.WriteFile(temp, []byte("half of another writer's file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cm := tr.write("comment", a, "--kind", "decision", "A note")
+	if _, _, changes := tr.head(); !reflect.DeepEqual(changes, []string{"A\t.cairn/issues/" + a + "/" + cm + ".md"}) {
+		t.Fatalf("HEAD's changes %q", changes)
+	}
+	if st := tr.status(); st != nil {
+		t.Fatalf("git sees the temporary file: %q", st)
+	}
+}
+
 // appendTo adds text to the end of the file at p.
 func appendTo(t *testing.T, p, text string) {
 	t.Helper()
