@@ -2,6 +2,7 @@ package cli
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -28,6 +29,9 @@ func (c *call) limit() (int, error) {
 		return defaultLimit, nil
 	}
 	n, err := strconv.Atoi(v)
+	if errors.Is(err, strconv.ErrRange) && n > 0 {
+		return 0, usageError(fmt.Sprintf("--limit %s is too large: use --all for every row", v))
+	}
 	if err != nil || n < 1 {
 		return 0, usageError(fmt.Sprintf("--limit must be a whole number of 1 or more, not %q", v))
 	}
