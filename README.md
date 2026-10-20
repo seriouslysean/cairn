@@ -4,8 +4,8 @@ An issue tracker for coding agents first and people second. Issues are markdown 
 your repository, committed with your code. One `cairn` command, installed once per machine, reads and writes them,
 and every command can answer in JSON.
 
-Status: early alpha (v0.1.0). It works on one checkout. Not in yet: reading other branches (`--branches`), search by
-meaning, the board, and GitHub sync. See [docs/plan.md](docs/plan.md).
+Status: early alpha. `cairn help` lists the commands that are built. See [docs/plan.md](docs/plan.md) for what comes
+next.
 
 ## Install
 
