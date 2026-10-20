@@ -97,7 +97,7 @@ absent. `commit` is `true` or `false`.
 | Need | Command |
 |---|---|
 | Start | `cairn init [--own-branch]` |
-| Lists | `cairn tags`, `cairn milestones`, `cairn ls [--status s] [--tag t] [--milestone m] [--due-before d] [--branches]` |
+| Lists | `cairn tags`, `cairn milestones`, `cairn ls [--status s] [--tag t] [--milestone m] [--due-before d] [--branches] [--limit N \| --all]` |
 | Milestones | `cairn milestone new <id> "title" [--due d]`, `cairn milestone edit <id> [--title t] [--status s] [--due d]` |
 | Add | `cairn new "title" [--body text] [--tag t]... [--milestone m] [--due d]` |
 | Edit | `cairn edit <id> [--title t] [--body text] [--status s] [--tag +t] [--tag -t] [--milestone m] [--due d]` |
@@ -106,7 +106,7 @@ absent. `commit` is `true` or `false`.
 | Comment | `cairn comment <id> --kind evidence\|decision\|result [--source s] "text"` |
 | Retract | `cairn retract <id> <comment> --reason "…" [--disproved-by <comment>]` |
 | Purge | `cairn purge <id> <comment>` |
-| Search | `cairn search "words"`, `cairn search --meaning "text"` |
+| Search | `cairn search "words" [--limit N \| --all]`, `cairn search --meaning "text"` |
 | Board | `cairn board`, `cairn board --html <file>` |
 | Sync | `cairn pull`, `cairn push [--dry-run]` |
 | Help | `cairn help`, `cairn version` |
@@ -115,15 +115,20 @@ absent. `commit` is `true` or `false`.
   `CAIRN_ACTOR` environment variable. `new` and `comment` record all three as `by`, `persona` and `model`; `retract`
   records the actor as `retracted_by`.
 - Every command takes `--json`. On success it prints `{"ok": true, "data": …}`, plus `"warnings": ["…"]` when it
-  gave warnings, the same ones stderr gets. On failure it prints `{"ok": false, "error": {"code": "…", "message": "…"}}`
-  on stdout, and a one-line message on stderr.
+  gave warnings, the same ones stderr gets, and on `ls` and `search` `"total"`. On failure it prints
+  `{"ok": false, "error": {"code": "…", "message": "…"}}` on stdout, and a one-line message on stderr.
+- `ls` and `search` print at most 30 rows: `--limit N` prints at most N, and `--all` every row. The cut comes after
+  the filters and the sort. `ls` keeps its last rows, the newest issues and then the branches' rows, and `search` its
+  best matches. When rows are left out, the command warns `30 of 672 shown; --limit N or --all for more`. `"total"`
+  is how many rows there were before the cut, whether or not any were cut. There are no pages: narrow with a filter
+  or a better query.
 - Exit codes:
   - 0: ok;
   - 1: error;
   - 2: usage;
   - 4: not found (3 is not used).
-- `help` prints one usage line per command, then the rules below, word for word. With `--json` its data is
-  `{"usage": [...], "rules": [...]}`.
+- `help` prints a line that says what `--json` prints, one usage line per command, then the rules below, word for
+  word. With `--json` its data is `{"usage": [...], "rules": [...]}`.
 
 ## Rules
 An agent with only the binary learns these from `cairn help`:
