@@ -48,7 +48,8 @@ var branchFields = []string{"%(refname)", "%(objectname)", "%(committerdate:unix
 // branchIssues returns the issues that active branches changed, as each branch's last commit has them: branches in
 // name order, and each branch's issues in store order. When issueID is not "", it reads that issue alone. A file that
 // cannot be read or does not parse leaves its issue out, with a warning that names the branch and the issue. Failing
-// to run git, or finding no default branch, is an error.
+// to run git, or finding no default branch, is an error. A tracker on its own branch has no other branch to read, so
+// it returns none and runs no git.
 //
 // The default branch is the first of origin/HEAD's branch and fallbackDefaults that is a local branch. An active
 // branch is any other local branch, in any worktree, that:
@@ -62,6 +63,9 @@ var branchFields = []string{"%(refname)", "%(objectname)", "%(committerdate:unix
 // ls-tree print them so, and git reads a path after "<commit>:./" so. Nothing compares absolute paths, which on macOS
 // can differ by a symlink.
 func (c *call) branchIssues(s *store.Store, issueID string) ([]branchVersion, error) {
+	if s.OwnBranch() {
+		return nil, nil
+	}
 	folder := store.IssuesDir + gitSep
 	if issueID != "" {
 		if !id.Valid(issueID) {

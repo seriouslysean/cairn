@@ -12,6 +12,15 @@ import (
 )
 
 func runInit(c *call) (output, error) {
+	if err := refuseSecondTracker(c.env.Dir); err != nil {
+		return output{}, err
+	}
+	if c.switches[flagOwnBranch] {
+		return c.initOwnBranch()
+	}
+	if originHasTracker(c.env.Dir) {
+		return output{}, existsError(originBranch + " holds a tracker: attach it with cairn init --" + flagOwnBranch)
+	}
 	s, err := store.Init(c.env.Dir)
 	if err != nil {
 		return output{}, err

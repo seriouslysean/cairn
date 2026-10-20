@@ -8,7 +8,7 @@ import (
 )
 
 var helpUsage = []string{
-	`init`,
+	`init [--own-branch]`,
 	`new "title" [--body text] [--tag t]... [--milestone m] [--due YYYY-MM-DD]`,
 	`edit <id> [--title t] [--body text] [--status s] [--tag +t|-t]... [--milestone m] [--due YYYY-MM-DD]`,
 	`rm <id>`,

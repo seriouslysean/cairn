@@ -30,7 +30,8 @@ type helpJSON struct {
 }
 
 type initJSON struct {
-	Dir string `json:"dir"`
+	Dir    string `json:"dir"`
+	Branch string `json:"branch"`
 }
 
 type rmJSON struct {

@@ -238,6 +238,35 @@ Read-only context:
 - internal/cli/lists_test.go
 - internal/store/store.go
 
+## Step 11: a branch of its own
+`init --own-branch` keeps the tracker on a branch named `cairn`, in a git repository of its own at `.cairn/` that the
+code repository ignores, so commit on write never lands on the code's branches and every worktree shares one tracker.
+It runs in the main checkout's top folder. It attaches `origin/cairn` when that holds a tracker, and otherwise makes
+one with commit on write on. It never pushes.
+- `store.Find` follows a linked worktree's `.git` file to the main checkout's tracker when that is on its own branch.
+  It reads files and runs no git: at 27 µs, against 8 ms to ask `git rev-parse`.
+- `init` without the flag will not start a second tracker: not in a checkout's top folder where `origin/cairn` holds
+  one, and not where a tracker on its own branch already serves the folder.
+- `--branches` adds nothing on such a tracker.
+
+The contract is the package comment in `internal/cli/cli.go` and the doc comment of `store.Find`. It was built before
+step 10: worktrees outside the repository, which several agent tools make, found no tracker at all.
+
+Drafter edits:
+- internal/cli/branches.go
+- internal/cli/cli.go
+- internal/cli/help.go
+- internal/cli/issues.go
+- internal/cli/json.go
+- internal/cli/ownbranch.go
+- internal/store/store.go
+
+Read-only context:
+- docs/spec.md
+- internal/cli/help_test.go
+- internal/cli/ownbranch_test.go
+- internal/store/store_test.go
+
 ## Later, in this order
 1. `pull`, one way: GitHub issues and their comments become Cairn issues and comments.
 2. `push`.

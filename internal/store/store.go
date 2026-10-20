@@ -64,21 +64,84 @@ type Store struct {
 	Dir string
 }
 
-// Find walks up from start, which must be an absolute path, and opens the first ".cairn" folder it finds. It
-// returns ErrNoTracker when it reaches the root without finding one; a ".cairn" that is a file does not count.
+// Find walks up from start, which must be an absolute path, and opens the first tracker it finds. In each folder it
+// looks first for a ".cairn" folder, then, when the folder is the top of a linked git worktree, for the main
+// checkout's ".cairn", which counts only when it is on its own branch (OwnBranch). It returns ErrNoTracker when it
+// reaches the root without finding one; a ".cairn" that is a file does not count.
+//
+// It finds the main checkout as git lays it out, reading files and running no git: the worktree's ".git" file says
+// "gitdir: <path>", that folder's "commondir" file names the repository's git folder, and the main checkout is that
+// folder's parent. Either path can be relative, to the folder of the file that holds it. A ".git" that is a folder or
+// says anything else, a gitdir with no commondir (as in a submodule), and a git folder not named ".git" (as in a bare
+// repository, which has no main checkout) are no link, and the walk goes on up.
 func Find(start string) (*Store, error) {
-	dir := start
-	for {
-		candidate := filepath.Join(dir, DirName)
-		if fi, err := os.Stat(candidate); err == nil && fi.IsDir() {
+	for dir := start; ; dir = filepath.Dir(dir) {
+		if candidate := filepath.Join(dir, DirName); isDir(candidate) {
 			return &Store{Dir: candidate}, nil
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
+		if s, ok := linkedTracker(dir); ok {
+			return s, nil
+		}
+		if filepath.Dir(dir) == dir {
 			return nil, ErrNoTracker
 		}
-		dir = parent
 	}
+}
+
+// What a linked worktree's files are called and say, as git lays them out.
+const (
+	gitName       = ".git"     // a checkout's git folder, a linked worktree's file, and the main repository's git folder
+	gitdirPrefix  = "gitdir: " // what a linked worktree's .git file says before its git folder's path
+	commondirFile = "commondir"
+)
+
+// linkedTracker is the main checkout's tracker when dir is the top of a linked worktree and that tracker is on its own
+// branch, as Find describes.
+func linkedTracker(dir string) (*Store, bool) {
+	gitdir, ok := pathIn(filepath.Join(dir, gitName), gitdirPrefix, dir)
+	if !ok {
+		return nil, false
+	}
+	common, ok := pathIn(filepath.Join(gitdir, commondirFile), "", gitdir)
+	if !ok || filepath.Base(common) != gitName {
+		return nil, false
+	}
+	s := &Store{Dir: filepath.Join(filepath.Dir(common), DirName)}
+	return s, s.OwnBranch()
+}
+
+// pathIn is the path that file holds after prefix, joined to base when it is relative. It is false when file cannot
+// be read, as when it is a folder, or does not start with prefix.
+func pathIn(file, prefix, base string) (string, bool) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return "", false
+	}
+	p, ok := strings.CutPrefix(strings.TrimSpace(string(data)), prefix)
+	if !ok || p == "" {
+		return "", false
+	}
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(base, p)
+	}
+	return p, true
+}
+
+func isDir(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
+}
+
+// OwnBranch reports whether the tracker is on a branch of its own: its folder holds a ".git" of its own, so it is a
+// git repository apart from the code's.
+func (s *Store) OwnBranch() bool {
+	_, err := os.Stat(filepath.Join(s.Dir, gitName))
+	return err == nil
+}
+
+// SaveConfig writes config.yml with c's fields and an empty body.
+func (s *Store) SaveConfig(c model.Config) error {
+	return writeDoc(filepath.Join(s.Dir, ConfigFile), c.Fields(), "")
 }
 
 // Init makes dir/.cairn with config.yml (DefaultConfig's fields, empty body), an issues and a milestones folder, and
