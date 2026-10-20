@@ -1,12 +1,13 @@
 // Package cli runs cairn's commands. It never prompts and never opens an editor.
 //
-// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json, --retracted, --branches and
-// --own-branch take no value. Flags and positional arguments can come in any order, and "--" ends the flags. A flag that takes a value
-// takes the next argument even when it starts with "-", so "--tag -t" works, but not one that starts with "--": that
-// is a missing value, and "--name=--value" passes such a value. --tag can be repeated; for any other flag the last
-// one wins. No arguments at all is a usage error. "--help" and "-h" mean help, and "--version" means version.
-// search --meaning, which a later step builds, is a usage error until then. So are --retracted anywhere but show,
-// --branches anywhere but ls and show, and --own-branch anywhere but init.
+// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json, --retracted, --branches,
+// --own-branch and --all take no value. Flags and positional arguments can come in any order, and "--" ends the
+// flags. A flag that takes a value takes the next argument even when it starts with "-", so "--tag -t" works, but not
+// one that starts with "--": that is a missing value, and "--name=--value" passes such a value. --tag can be
+// repeated; for any other flag the last one wins. No arguments at all is a usage error. "--help" and "-h" mean help,
+// and "--version" means version. search --meaning, which a later step builds, is a usage error until then. So are
+// --retracted anywhere but show, --branches anywhere but ls and show, --own-branch anywhere but init, and --limit
+// and --all anywhere but ls and search.
 //
 // Output: --json anywhere before "--" turns on JSON, even when the other arguments are wrong. With --json, success
 // prints {"ok": true, "data": …} and failure prints
@@ -14,7 +15,8 @@
 // --json, success prints text on stdout and failure prints "cairn: <message>" on one line of stderr and nothing on
 // stdout. A command that succeeds with warnings still exits 0, and prints each warning in both modes as one line
 // "cairn: warning: <message>" on stderr. With --json, its envelope also has "warnings": [<message>, …], in the same
-// order, and without warnings it has no "warnings" key. A command that fails prints no warnings.
+// order, and without warnings it has no "warnings" key. A command that fails prints no warnings. ls and search also
+// have "total" in their envelope, after "data", as --limit below says; no other command's envelope has it.
 //
 // Exit codes and error codes:
 //   - 0: ok.
@@ -129,9 +131,17 @@
 //     least one match are listed by matches, most first, then in store order. Text: one
 //     "<id>\t<matches>\t<title>\n" line each. Data: a list of issues without "body", each with "matches" added (an
 //     empty list, never null, when nothing matches).
+//   - --limit N and --all, on ls and search, cap the rows they print. Without either, they print at most
+//     defaultLimit (30) rows; with --limit, at most N, which must be a whole number of 1 or more as strconv.Atoi
+//     reads it; with --all, every row. Any other N, and --limit with --all, is a usage error. The cut comes after the
+//     filters and the sort: ls keeps its last N rows, which are the newest issues, store order being oldest first,
+//     and with --branches the branch versions, which come last; search keeps its first N, the most matches. Text and
+//     data hold the same rows. When rows are dropped, the command warns "<shown> of <total> shown; --limit N or --all
+//     for more". With --json, the envelope of ls and search always has "total": the number of rows before the cut, 0
+//     when there are none.
 //   - version.
-//   - help prints commandUsage, one usage line per command, then agentRules, the rules in docs/spec.md. Data:
-//     {"usage": commandUsage, "rules": agentRules}.
+//   - help prints a line that says what --json prints, then commandUsage, one usage line per command, then
+//     agentRules, the rules in docs/spec.md. Data: {"usage": commandUsage, "rules": agentRules}.
 //
 // A tag is non-empty with no space, ",", "[" or "]". When it has a ":", the part before the first ":" must be one of
 // the config's tag_groups. A milestone, as an id or as what an issue names, has no "/" and does not start with ".";
@@ -211,6 +221,8 @@ const (
 	flagReason      = "reason"
 	flagDisprovedBy = "disproved-by"
 	flagOwnBranch   = "own-branch"
+	flagLimit       = "limit"
+	flagAll         = "all"
 )
 
 const (
@@ -219,7 +231,7 @@ const (
 )
 
 // switches are the flags that take no value. Every other flag takes one.
-var switches = map[string]bool{flagJSON: true, flagRetracted: true, flagBranches: true, flagOwnBranch: true}
+var switches = map[string]bool{flagJSON: true, flagRetracted: true, flagBranches: true, flagOwnBranch: true, flagAll: true}
 
 // actorFlags are the flags every write takes.
 var actorFlags = []string{flagAs, flagPersona, flagModel}
@@ -250,7 +262,7 @@ var commands = map[string]command{
 	"rm": {writes: true, args: 1, argsErr: "rm requires exactly one issue id", run: runRm},
 	"show": {flags: []string{flagRetracted, flagBranches},
 		args: 1, argsErr: "show requires exactly one issue id", run: runShow},
-	"ls": {flags: []string{flagStatus, flagTag, flagMilestone, flagDueBefore, flagBranches},
+	"ls": {flags: []string{flagStatus, flagTag, flagMilestone, flagDueBefore, flagBranches, flagLimit, flagAll},
 		argsErr: "ls takes no positional arguments", run: runLs},
 	"comment": {flags: []string{flagKind, flagSource}, writes: true,
 		args: 2, argsErr: "comment requires exactly one issue id and one text", run: runComment},
@@ -260,7 +272,7 @@ var commands = map[string]command{
 		args: 2, argsErr: "purge requires exactly one issue id and one comment id", run: runPurge},
 	"tags":       {argsErr: "tags takes no positional arguments", run: runTags},
 	"milestones": {argsErr: "milestones takes no positional arguments", run: runMilestones},
-	"search":     {args: oneOrMore, argsErr: "search requires at least one word", run: runSearch},
+	"search":     {flags: []string{flagLimit, flagAll}, args: oneOrMore, argsErr: "search requires at least one word", run: runSearch},
 }
 
 var milestoneCommands = map[string]command{
@@ -281,6 +293,7 @@ type call struct {
 	switches map[string]bool     // the switches given
 	wrote    *write              // what a write changed, set once it has
 	warnings []string
+	total    *int // the envelope's "total": set by ls and search only
 }
 
 // output is what a command prints when it succeeds: data with --json, text without.
@@ -445,7 +458,7 @@ func (c *call) warn(msg string) {
 // print writes out to stdout: its data in the success envelope with --json, else its text.
 func (c *call) print(out output, jsonOn bool) error {
 	if jsonOn {
-		return json.NewEncoder(c.env.Stdout).Encode(successJSON{OK: true, Data: out.data, Warnings: c.warnings})
+		return json.NewEncoder(c.env.Stdout).Encode(successJSON{OK: true, Data: out.data, Total: c.total, Warnings: c.warnings})
 	}
 	_, err := io.WriteString(c.env.Stdout, out.text)
 	return err

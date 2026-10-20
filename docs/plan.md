@@ -222,6 +222,10 @@ cut, whether or not any were cut. There are no pages: an agent narrows with a fi
 and `milestones` don't change. The spec's Commands table and `--json` line change with it, and the contract is the
 package comment in `internal/cli/cli.go`.
 
+`help` gains a second line that says what `--json` prints: the envelope, `"warnings"` and `"total"` included, and the
+failure's. An agent with only the binary otherwise has no way to learn the shape. `help --json` stays
+`{"usage", "rules"}`: it is already in the envelope it would describe.
+
 It comes before `pull`, which brings in issues by the hundred. Reading isn't the problem: at 10,000 issues `ls` takes
 under 0.4 s and `search` about 1 s. Output is: there, `ls --json` prints 2.7 MB, and a tracker of 672 issues already
 prints 195 KB.
@@ -233,10 +237,7 @@ Drafter edits:
 - internal/cli/lists.go
 
 Read-only context:
-- docs/spec.md
-- internal/cli/branches.go
-- internal/cli/lists_test.go
-- internal/store/store.go
+- internal/cli/limits_test.go
 
 ## Step 11: a branch of its own
 `init --own-branch` keeps the tracker on a branch named `cairn`, in a git repository of its own at `.cairn/` that the

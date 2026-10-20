@@ -50,9 +50,10 @@ This repo tracks issues with Cairn. Run `cairn help` before using it, and set `C
 ```
 
 `cairn help` prints every command's usage and the rules. Add `--json` to any command: success prints
-`{"ok": true, "data": …}`, plus `"warnings"` when there are any, failure prints
+`{"ok": true, "data": …}`, plus `"warnings"` when there are any and `"total"` on `ls` and `search`, failure prints
 `{"ok": false, "error": {"code": "…", "message": "…"}}`, and the exit codes are 0 ok, 1 error, 2 usage, 4 not found.
-[docs/spec.md](docs/spec.md) has the rest.
+`ls` and `search` print at most 30 rows, with a warning when they leave some out: narrow with a filter or a better
+query, or pass `--limit N` or `--all`. [docs/spec.md](docs/spec.md) has the rest.
 
 ## Requests
 

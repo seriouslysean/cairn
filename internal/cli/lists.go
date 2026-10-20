@@ -2,9 +2,11 @@ package cli
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/seriouslysean/cairn/internal/model"
@@ -12,7 +14,51 @@ import (
 	"github.com/seriouslysean/cairn/internal/words"
 )
 
+// defaultLimit is how many rows ls and search print when neither --limit nor --all is given.
+const defaultLimit = 30
+
+// limit is how many rows ls and search keep, as the package doc describes, or 0 with --all, for every row.
+func (c *call) limit() (int, error) {
+	v, given := c.given(flagLimit)
+	switch {
+	case given && c.switches[flagAll]:
+		return 0, usageError("--limit and --all cannot both be given")
+	case c.switches[flagAll]:
+		return 0, nil
+	case !given:
+		return defaultLimit, nil
+	}
+	n, err := strconv.Atoi(v)
+	if errors.Is(err, strconv.ErrRange) && n > 0 {
+		return 0, usageError(fmt.Sprintf("--limit %s is too large: use --all for every row", v))
+	}
+	if err != nil || n < 1 {
+		return 0, usageError(fmt.Sprintf("--limit must be a whole number of 1 or more, not %q", v))
+	}
+	return n, nil
+}
+
+// keep is what ls or search prints of rows: every row when limit is 0 or there are no more than limit, else the
+// last limit rows when fromEnd (ls) and the first limit otherwise (search). It sets the envelope's total to
+// len(rows), and warns when it drops rows.
+func keep[T any](c *call, rows []T, limit int, fromEnd bool) []T {
+	total := len(rows)
+	c.total = &total
+	if limit == 0 || total <= limit {
+		return rows
+	}
+	c.warn(fmt.Sprintf("%d of %d shown; --limit N or --all for more", limit, total))
+	if fromEnd {
+		return rows[total-limit:]
+	}
+	return rows[:limit]
+}
+
 func runLs(c *call) (output, error) {
+	limit, err := c.limit()
+	if err != nil {
+		return output{}, err
+	}
 	s, err := store.Find(c.env.Dir)
 	if err != nil {
 		return output{}, err
@@ -47,6 +93,7 @@ func runLs(c *call) (output, error) {
 			slices.ContainsFunc(tags, func(t string) bool { return !slices.Contains(i.Tags, t) }) ||
 			byDue && (i.Due == "" || i.Due >= dueBefore)
 	})
+	rows = keep(c, rows, limit, true)
 	data := make([]lsJSON, len(rows))
 	var text strings.Builder
 	for n, v := range rows {
@@ -92,6 +139,10 @@ func runSearch(c *call) (output, error) {
 	if len(words.Split(query)) == 0 {
 		return output{}, usageError("search query has no words")
 	}
+	limit, err := c.limit()
+	if err != nil {
+		return output{}, err
+	}
 	s, err := store.Find(c.env.Dir)
 	if err != nil {
 		return output{}, err
@@ -111,6 +162,7 @@ func runSearch(c *call) (output, error) {
 		}
 	}
 	slices.SortStableFunc(data, func(a, b searchJSON) int { return cmp.Compare(b.Matches, a.Matches) })
+	data = keep(c, data, limit, false)
 	var text strings.Builder
 	for _, hit := range data {
 		fmt.Fprintf(&text, "%s\t%d\t%s\n", hit.ID, hit.Matches, hit.Title)
