@@ -7,6 +7,7 @@ import "github.com/seriouslysean/cairn/internal/model"
 type successJSON struct {
 	OK       bool     `json:"ok"`
 	Data     any      `json:"data"`
+	Total    *int     `json:"total,omitempty"`
 	Warnings []string `json:"warnings,omitempty"`
 }
 

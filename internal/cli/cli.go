@@ -221,6 +221,8 @@ const (
 	flagReason      = "reason"
 	flagDisprovedBy = "disproved-by"
 	flagOwnBranch   = "own-branch"
+	flagLimit       = "limit"
+	flagAll         = "all"
 )
 
 const (
@@ -229,7 +231,7 @@ const (
 )
 
 // switches are the flags that take no value. Every other flag takes one.
-var switches = map[string]bool{flagJSON: true, flagRetracted: true, flagBranches: true, flagOwnBranch: true}
+var switches = map[string]bool{flagJSON: true, flagRetracted: true, flagBranches: true, flagOwnBranch: true, flagAll: true}
 
 // actorFlags are the flags every write takes.
 var actorFlags = []string{flagAs, flagPersona, flagModel}
@@ -260,7 +262,7 @@ var commands = map[string]command{
 	"rm": {writes: true, args: 1, argsErr: "rm requires exactly one issue id", run: runRm},
 	"show": {flags: []string{flagRetracted, flagBranches},
 		args: 1, argsErr: "show requires exactly one issue id", run: runShow},
-	"ls": {flags: []string{flagStatus, flagTag, flagMilestone, flagDueBefore, flagBranches},
+	"ls": {flags: []string{flagStatus, flagTag, flagMilestone, flagDueBefore, flagBranches, flagLimit, flagAll},
 		argsErr: "ls takes no positional arguments", run: runLs},
 	"comment": {flags: []string{flagKind, flagSource}, writes: true,
 		args: 2, argsErr: "comment requires exactly one issue id and one text", run: runComment},
@@ -270,7 +272,7 @@ var commands = map[string]command{
 		args: 2, argsErr: "purge requires exactly one issue id and one comment id", run: runPurge},
 	"tags":       {argsErr: "tags takes no positional arguments", run: runTags},
 	"milestones": {argsErr: "milestones takes no positional arguments", run: runMilestones},
-	"search":     {args: oneOrMore, argsErr: "search requires at least one word", run: runSearch},
+	"search":     {flags: []string{flagLimit, flagAll}, args: oneOrMore, argsErr: "search requires at least one word", run: runSearch},
 }
 
 var milestoneCommands = map[string]command{
@@ -291,6 +293,7 @@ type call struct {
 	switches map[string]bool     // the switches given
 	wrote    *write              // what a write changed, set once it has
 	warnings []string
+	total    *int // the envelope's "total": set by ls and search only
 }
 
 // output is what a command prints when it succeeds: data with --json, text without.
@@ -455,7 +458,7 @@ func (c *call) warn(msg string) {
 // print writes out to stdout: its data in the success envelope with --json, else its text.
 func (c *call) print(out output, jsonOn bool) error {
 	if jsonOn {
-		return json.NewEncoder(c.env.Stdout).Encode(successJSON{OK: true, Data: out.data, Warnings: c.warnings})
+		return json.NewEncoder(c.env.Stdout).Encode(successJSON{OK: true, Data: out.data, Total: c.total, Warnings: c.warnings})
 	}
 	_, err := io.WriteString(c.env.Stdout, out.text)
 	return err

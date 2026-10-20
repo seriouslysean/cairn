@@ -9,7 +9,9 @@ func runVersion(c *call) (output, error) {
 func runHelp(*call) (output, error) {
 	const indent = "\n  "
 	text := "Usage: cairn <command> [args]\n" +
-		"Every command takes --json. Writes take --as (or " + actorEnv + "), --persona and --model.\n\n" +
+		`Every command takes --json: success prints {"ok": true, "data": …}, plus "warnings" when there are any and ` +
+		`"total" on ls and search; failure prints {"ok": false, "error": {"code": "…", "message": "…"}}.` + "\n" +
+		"Writes take --as (or " + actorEnv + "), --persona and --model.\n\n" +
 		"Commands:" + indent + strings.Join(commandUsage, indent) + "\n\n" +
 		"Rules:" + indent + strings.Join(agentRules, indent) + "\n"
 	return output{helpJSON{Usage: commandUsage, Rules: agentRules}, text}, nil
@@ -22,7 +24,7 @@ var commandUsage = []string{
 	`edit <id> [--title t] [--body text] [--status s] [--tag +t|-t]... [--milestone m] [--due YYYY-MM-DD]`,
 	`rm <id>`,
 	`show <id> [--retracted] [--branches]`,
-	`ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD] [--branches]`,
+	`ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD] [--branches] [--limit N | --all]`,
 	`comment <id> --kind evidence|decision|result [--source s] "text"`,
 	`retract <id> <comment> --reason "text" [--disproved-by <comment>]`,
 	`purge <id> <comment>`,
@@ -30,7 +32,7 @@ var commandUsage = []string{
 	`milestones`,
 	`milestone new <id> "title" [--due YYYY-MM-DD]`,
 	`milestone edit <id> [--title t] [--status s] [--due YYYY-MM-DD]`,
-	`search <words>...`,
+	`search <words>... [--limit N | --all]`,
 	`version`,
 	`help`,
 }
