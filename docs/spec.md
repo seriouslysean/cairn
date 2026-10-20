@@ -111,6 +111,10 @@ absent. `commit` is `true` or `false`.
 | Sync | `cairn pull`, `cairn push [--dry-run]` |
 | Help | `cairn help`, `cairn version` |
 
+`cairn search --meaning`, `cairn board`, `cairn board --html <file>`, `cairn pull` and `cairn push` are in the table
+above but are not built yet. They come in later steps of [plan.md](plan.md). Until then they exit 2, a usage error.
+`cairn help` lists only what is built.
+
 - Every write takes `--as <actor>` and, optionally, `--persona <p>` and `--model <m>`. The actor can also come from the
   `CAIRN_ACTOR` environment variable. `new` and `comment` record all three as `by`, `persona` and `model`; `retract`
   records the actor as `retracted_by`.
