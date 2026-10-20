@@ -1,8 +1,9 @@
 # Cairn v0 spec
 
 Cairn is an issue tracker for coding agents first and people second. Issues live as markdown files in a `.cairn/`
-folder inside the repository they belong to, committed with the code. One `cairn` command, installed once per machine,
-reads and writes them. An agent can do everything without a person: no prompts, no editor, JSON on request.
+folder inside the repository they belong to, committed with the code or on a branch of their own (below). One `cairn`
+command, installed once per machine, reads and writes them. An agent can do everything without a person: no prompts,
+no editor, JSON on request.
 
 ## Storage
 
@@ -95,7 +96,7 @@ absent. `commit` is `true` or `false`.
 
 | Need | Command |
 |---|---|
-| Start | `cairn init` |
+| Start | `cairn init [--own-branch]` |
 | Lists | `cairn tags`, `cairn milestones`, `cairn ls [--status s] [--tag t] [--milestone m] [--due-before d] [--branches]` |
 | Milestones | `cairn milestone new <id> "title" [--due d]`, `cairn milestone edit <id> [--title t] [--status s] [--due d]` |
 | Add | `cairn new "title" [--body text] [--tag t]... [--milestone m] [--due d]` |
@@ -155,7 +156,7 @@ An agent with only the binary learns these from `cairn help`:
 - Cairn does not look for duplicates. Run `search` before `new`.
 
 ## Branches
-- By default, commands read the current checkout only. Only `--branches` and commit on write (below) run git.
+- By default, commands read the current checkout only. Only `--branches`, commit on write and `init` (below) run git.
 - `ls --branches` and `show --branches` add what active branches committed. The default branch is the one
   `origin/HEAD` names, else `main`, else `master`. An active branch is a local branch, in any worktree, that:
   - is not the default branch or the branch checked out here;
@@ -166,20 +167,44 @@ An agent with only the binary learns these from `cairn help`:
   it. Uncommitted work, here or in another worktree, is not seen. An issue the branch removed is left out.
 - `ls` lists the checkout's issues, then each branch's, marked with the branch name. `show` prints the checkout's
   version, then each branch's under a `=== branch <name> ===` line, so an issue changed on two branches shows both.
+- On a tracker on its own branch (below), `--branches` adds nothing: no other branch holds its issues.
+
+## A branch of its own (optional)
+- `cairn init --own-branch` keeps the tracker on a branch named `cairn`, in a git repository of its own at `.cairn/`,
+  which the code repository ignores through a `/.cairn` line in `.git/info/exclude`, a file git never commits. Writes
+  commit on `cairn` whatever branch the code has checked out, so they never ride in a pull request and outlive a code
+  branch that is dropped.
+- It runs in the top folder of the main checkout. When `origin/cairn` holds a tracker, it attaches it with
+  `git clone --single-branch --branch cairn`. Otherwise it makes one, with commit on write on, the code's `origin` as
+  its remote, and one commit of its files. It never pushes: `git -C .cairn push` shares the writes, and
+  `git -C .cairn pull` brings in other people's.
+- `cairn init` without the flag will not start a second tracker: not where `origin/cairn` holds one (it names the
+  command that attaches it), and not where a tracker on its own branch already serves the folder.
+- A linked worktree, inside the repository or outside it, uses the main checkout's tracker when it has no `.cairn` of
+  its own. Cairn follows the worktree's `.git` file to the `commondir` file git keeps for it, without running git. A
+  bare repository's worktrees have no main checkout, so they find none.
+- What it costs:
+  - a shallow clone, or a host that clones one branch, has no `origin/cairn`, so it has no tracker until one is
+    attached;
+  - an agent that can push only its own branch cannot push `cairn`;
+  - `git clean -ffdx` in the code repository deletes `.cairn/`, with any commits not yet pushed;
+  - a change to `config.yml` is committed by hand;
+  - on a public repository, the `cairn` branch is public too.
 
 ## Commit on write (optional)
 - With `commit: true`, each write that succeeds commits what it changed: the issue's folder, or for `milestone new`
   and `milestone edit` the milestone's file, as it is on disk. Nothing else is staged or committed. `init` commits
-  nothing.
+  nothing, except the first commit of `init --own-branch`.
 - The message is `chore(cairn): <command> <id> (by <actor>)`, for example `chore(cairn): comment 7f3k (by alice)`.
-  The author is whoever git's config names, and the repository's hooks run.
+  The author is whoever git's config names, and the hooks of the repository the tracker's folder is in run: on a
+  branch of its own, that is the tracker's own repository, not the code's.
 - A commit is tried once. When it fails (no git, no repository, another writer's lock, a hook), the write stands and
   the command succeeds with a warning, unless another writer has already committed the change. The next write to the
   same issue commits what was left.
 - Two writes at the same moment can collide on git's locks, and then one of them is left uncommitted. To commit every
   write, run writes one at a time.
-- It commits on the branch checked out, so it suits a tracker kept in a repository of its own. In a repository that
-  works through pull requests, leave it off.
+- It commits on the branch checked out, so it suits a tracker kept in a repository of its own, or on a branch of its
+  own, where it is on. In a repository that works through pull requests, with the tracker in the tree, leave it off.
 
 ## GitHub sync (optional, through the `gh` CLI)
 - `pull`:

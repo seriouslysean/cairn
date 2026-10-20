@@ -29,7 +29,15 @@ cairn edit 7f3k --status done
 cairn search export row
 ```
 
-Commit `.cairn/` with your code.
+Commit `.cairn/` with your code, or keep it out of your code's history on a branch of its own:
+
+```sh
+cairn init --own-branch    # in the main checkout's top folder; attaches origin/cairn when it holds a tracker
+git -C .cairn push         # shares the writes; git -C .cairn pull brings in other people's
+```
+
+Every worktree of the repository then uses that one tracker. See "A branch of its own" in
+[docs/spec.md](docs/spec.md).
 
 ## For agents
 
