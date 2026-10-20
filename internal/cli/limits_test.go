@@ -3,6 +3,8 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -88,6 +90,9 @@ func TestLsLimit(t *testing.T) {
 		{[]string{"ls", "--limit=1"}, ids[31:], "1 of 32 shown; --limit N or --all for more"},
 		{[]string{"ls", "--limit", "32"}, ids, ""},
 		{[]string{"ls", "--limit", "100"}, ids, ""},
+		// N is read as strconv.Atoi reads it.
+		{[]string{"ls", "--limit", "+5"}, ids[27:], "5 of 32 shown; --limit N or --all for more"},
+		{[]string{"ls", "--limit", "007"}, ids[25:], "7 of 32 shown; --limit N or --all for more"},
 		// The last --limit wins, as for any flag but --tag.
 		{[]string{"ls", "--limit", "1", "--limit", "2"}, ids[30:], "2 of 32 shown; --limit N or --all for more"},
 	} {
@@ -147,6 +152,7 @@ func TestSearchLimit(t *testing.T) {
 	}{
 		{[]string{"search", "alpha", "beta"}, all[:30], "30 of 32 shown; --limit N or --all for more"},
 		{[]string{"search", "alpha", "beta", "--limit", "1"}, all[:1], "1 of 32 shown; --limit N or --all for more"},
+		{[]string{"search", "alpha", "beta", "--limit=1"}, all[:1], "1 of 32 shown; --limit N or --all for more"},
 		{[]string{"search", "--all", "alpha", "beta"}, all, ""},
 		{[]string{"search", "alpha", "beta", "--limit", "32"}, all, ""},
 	} {
@@ -183,6 +189,52 @@ func TestLsBranchesLimit(t *testing.T) {
 	}
 }
 
+// Exactly as many rows as the limit are all printed, with no warning.
+func TestLsLimitBoundary(t *testing.T) {
+	tr := newTracker(t)
+	ids := tr.many(30, "issue")
+	env, errOut := tr.envelope("ls")
+	checkCut(t, []string{"ls"}, env, ids, 30, "")
+	if errOut != "" {
+		t.Fatalf("stderr %q", errOut)
+	}
+}
+
+// A broken branch file's warning comes first, and the cut's warning last, on stderr and in the envelope.
+func TestLsBranchesLimitWarnings(t *testing.T) {
+	tr := gitTracker(t, "main", ".")
+	tr.git("switch", "-q", "-c", "bad")
+	broken := tr.many(1, "Broken")[0]
+	if err := os.WriteFile(filepath.Join(tr.dir, ".cairn", "issues", broken, "issue.md"), []byte("nope"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tr.commit(t0.Add(-time.Hour), "bad")
+	tr.git("switch", "-q", "main")
+	ids := tr.many(2, "issue")
+	env, errOut := tr.envelope("ls", "--branches", "--limit", "1")
+	warnings, _ := env["warnings"].([]any)
+	if len(warnings) != 2 || !strings.Contains(warnings[0].(string), "bad") ||
+		warnings[1] != "1 of 2 shown; --limit N or --all for more" {
+		t.Fatalf("warnings %v", env["warnings"])
+	}
+	if lines := strings.Split(strings.TrimSuffix(errOut, "\n"), "\n"); len(lines) != 2 ||
+		lines[0] != warningPrefix+warnings[0].(string) || lines[1] != warningPrefix+warnings[1].(string) {
+		t.Fatalf("stderr %q", errOut)
+	}
+	if got := rowIDs(t, env); !reflect.DeepEqual(got, ids[1:]) {
+		t.Fatalf("rows %q", got)
+	}
+}
+
+// A number too large for an int is a usage error that says so.
+func TestLimitTooLarge(t *testing.T) {
+	tr := newTracker(t)
+	code, out, errOut := tr.run("ls", "--limit", "99999999999999999999")
+	if code != 2 || out != "" || errOut != "cairn: --limit 99999999999999999999 is too large: use --all for every row\n" {
+		t.Fatalf("exit %d, %q, %q", code, out, errOut)
+	}
+}
+
 func TestLimitUsageErrors(t *testing.T) {
 	tr := newTracker(t)
 	id := tr.issue("new", "one").ID
@@ -207,15 +259,34 @@ func TestLimitUsageErrors(t *testing.T) {
 	}
 }
 
-// Only ls and search have a total, whatever their rows; no other command's envelope has one.
+// Only ls and search have a total, whatever their rows; no other command's envelope has one, and neither does a
+// failure's.
 func TestTotalOnlyOnLsAndSearch(t *testing.T) {
 	tr := newTracker(t)
 	id := tr.issue("new", "one").ID
 	tr.issue("milestone", "new", "v1", "Version 1")
 	for _, args := range [][]string{{"show", id}, {"tags"}, {"milestones"}, {"help"}, {"version"},
-		{"edit", id, "--title", "two"}} {
-		if env, _ := tr.envelope(args...); env["total"] != nil {
-			t.Errorf("%q has a total: %v", args, env["total"])
+		{"new", "two"}, {"edit", id, "--title", "three"}, {"comment", id, "--kind", "result", "done"},
+		{"milestone", "edit", "v1", "--title", "Version one"}} {
+		if env, _ := tr.envelope(args...); env["total"] != nil || len(env) != 2 {
+			t.Errorf("%q: want only ok and data, got %v", args, env)
 		}
+	}
+	if _, out, _ := tr.run("ls", "--limit", "0", "--json"); strings.Contains(out, "total") {
+		t.Errorf("failure has a total: %q", out)
+	}
+}
+
+// "total" comes right after "data", before "warnings".
+func TestTotalAfterData(t *testing.T) {
+	tr := newTracker(t)
+	if _, out, _ := tr.run("ls", "--json"); out != `{"ok":true,"data":[],"total":0}`+"\n" {
+		t.Fatalf("empty: %q", out)
+	}
+	tr.many(2, "issue")
+	_, out, _ := tr.run("ls", "--limit", "1", "--json")
+	d, n, w := strings.Index(out, `"data":`), strings.Index(out, `"total":2,`), strings.Index(out, `"warnings":`)
+	if d < 0 || n < d || w < n {
+		t.Fatalf("key order: %q", out)
 	}
 }
