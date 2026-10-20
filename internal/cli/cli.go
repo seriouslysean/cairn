@@ -1,12 +1,12 @@
 // Package cli runs cairn's commands. It never prompts and never opens an editor.
 //
-// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json, --retracted and --branches take
-// no value. Flags and positional arguments can come in any order, and "--" ends the flags. A flag that takes a value
+// Arguments: flags start with "--" and take "--name value" or "--name=value"; --json, --retracted, --branches and
+// --own-branch take no value. Flags and positional arguments can come in any order, and "--" ends the flags. A flag that takes a value
 // takes the next argument even when it starts with "-", so "--tag -t" works, but not one that starts with "--": that
 // is a missing value, and "--name=--value" passes such a value. --tag can be repeated; for any other flag the last
 // one wins. No arguments at all is a usage error. "--help" and "-h" mean help, and "--version" means version.
-// search --meaning, which a later step builds, is a usage error until then. So are --retracted anywhere but show and
-// --branches anywhere but ls and show.
+// search --meaning, which a later step builds, is a usage error until then. So are --retracted anywhere but show,
+// --branches anywhere but ls and show, and --own-branch anywhere but init.
 //
 // Output: --json anywhere before "--" turns on JSON, even when the other arguments are wrong. With --json, success
 // prints {"ok": true, "data": …} and failure prints
@@ -18,8 +18,8 @@
 //
 // Exit codes and error codes:
 //   - 0: ok.
-//   - 1: "no_tracker" (no .cairn here or above), "exists" (init where .cairn exists, or milestone new for an id
-//     that has a file), "error" (anything else).
+//   - 1: "no_tracker" (no .cairn here or above), "exists" (init where .cairn exists or another tracker would be
+//     hidden, or milestone new for an id that has a file), "error" (anything else).
 //   - 2: "usage": an unknown command or flag, a missing or extra argument, a missing value, or a value in the wrong
 //     form, including a bad date, a status not in the config, a tag whose group is not in the config, and a write
 //     with no actor.
@@ -41,11 +41,27 @@
 // When git fails (no git, no repository, another writer's lock, a hook), or config.yml cannot be read after a write
 // that did not need it, the write stands and the command still succeeds, with the warning
 // "not committed: <the error>". But when git status then shows nothing left to commit at the path, another writer
-// committed the change first, and there is no warning. A write that fails commits nothing, and init never commits.
+// committed the change first, and there is no warning. A write that fails commits nothing, and init commits only as
+// init --own-branch describes.
 //
 // Commands:
-//   - init: makes .cairn in Env.Dir (it does not look upward). Text: "initialized <the .cairn path>\n". Data:
-//     {"dir": the .cairn path}.
+//   - init: makes .cairn in Env.Dir (it does not look upward for a place to put it). It is "exists", and changes
+//     nothing, when Env.Dir already has a .cairn, or when store.Find from Env.Dir reaches a tracker on its own branch,
+//     as a linked worktree reaches its main checkout's, with a message that names that tracker's folder; with or
+//     without --own-branch. Without it, when Env.Dir has a .git, init runs git once, and is "exists" too when
+//     origin/cairn holds a tracker (a config.yml at its top), with a message that names cairn init --own-branch.
+//     Text: "initialized <the .cairn path>\n". Data: {"dir": the .cairn path, "branch": ""}.
+//   - init --own-branch: keeps the tracker on the branch cairn, in a git repository of its own at .cairn. After
+//     those two checks, Env.Dir must be the top folder of a main checkout, not a subfolder or a linked worktree, and an
+//     origin/cairn, when there is one, must hold a tracker; anything else is an "error", and changes nothing. Then it
+//     adds the line "/.cairn" to the repository's info/exclude, unless a line already says it. When origin/cairn holds
+//     a tracker, it attaches it, git clone --single-branch --branch cairn <origin's URL> .cairn, and its text is
+//     "attached <the .cairn path> to origin/cairn\n". Otherwise it makes it: init's files with commit: true in
+//     config.yml, git init on the branch cairn, with origin's URL as the remote origin and origin/cairn as the
+//     branch's upstream when the code repository has an origin, and one commit of every file, "chore(cairn): init".
+//     When that commit fails, the tracker stands, uncommitted, with the warning "not committed: <the error>". Its
+//     text is then "initialized <the .cairn path> on branch cairn\n". Data either way: {"dir": the .cairn path,
+//     "branch": "cairn"}. It never pushes.
 //   - new "title" [--body text] [--tag t]... [--milestone m] [--due YYYY-MM-DD]: adds an issue with the
 //     config's first status, created and updated set to Env.Now in UTC truncated to the millisecond, and a new id.
 //     The title must not be blank. A non-empty body that does not end in "\n" gets one. Repeated tags are kept once.
@@ -63,10 +79,10 @@
 //   - ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]: lists issues in store order. Every filter
 //     given must match; --due-before keeps issues with a due date before d. Text: one "<id>\t<status>\t<title>\n"
 //     line per issue. Data: a list of issues without "body" (an empty list, never null).
-//   - --branches, on ls and show, adds what active branches committed, as branchIssues reads it. Without it, and
-//     without commit on write, Cairn never runs git. With it, failing to read git (no git, no repository, no default
-//     branch) is an "error", and a branch file that cannot be read or does not parse is a warning that names the
-//     branch and the issue.
+//   - --branches, on ls and show, adds what active branches committed, as branchIssues reads it. Without it, commit on
+//     write and init, Cairn never runs git. With it, failing to read git (no git, no repository, no default branch) is
+//     an "error", and a branch file that cannot be read or does not parse is a warning that names the branch and the
+//     issue. On a tracker on its own branch it adds nothing and runs no git.
 //   - ls --branches: the checkout's rows, then the branch versions, all through the same filters. Text: a branch
 //     version's line is "<id>\t<status>\t<title>\t<branch>\n". Data: every item also has "branch" ("" for the
 //     checkout).
@@ -194,6 +210,7 @@ const (
 	flagSource      = "source"
 	flagReason      = "reason"
 	flagDisprovedBy = "disproved-by"
+	flagOwnBranch   = "own-branch"
 )
 
 const (
@@ -202,7 +219,7 @@ const (
 )
 
 // switches are the flags that take no value. Every other flag takes one.
-var switches = map[string]bool{flagJSON: true, flagRetracted: true, flagBranches: true}
+var switches = map[string]bool{flagJSON: true, flagRetracted: true, flagBranches: true, flagOwnBranch: true}
 
 // actorFlags are the flags every write takes.
 var actorFlags = []string{flagAs, flagPersona, flagModel}
@@ -225,7 +242,7 @@ const milestoneCommand = "milestone"
 var commands = map[string]command{
 	"version": {argsErr: "version takes no arguments", run: runVersion},
 	"help":    {argsErr: "help takes no arguments", run: runHelp},
-	"init":    {argsErr: "init takes no arguments", run: runInit},
+	"init":    {flags: []string{flagOwnBranch}, argsErr: "init takes no arguments", run: runInit},
 	"new": {flags: []string{flagBody, flagTag, flagMilestone, flagDue}, writes: true,
 		args: 1, argsErr: "new requires exactly one title argument", run: runNew},
 	"edit": {flags: []string{flagTitle, flagBody, flagStatus, flagTag, flagMilestone, flagDue}, writes: true,
