@@ -237,3 +237,16 @@ func TestOwnBranchBranches(t *testing.T) {
 		t.Fatalf("show --branches: exit %d (%s), data %s", code, errCode, data)
 	}
 }
+
+// A first commit that fails leaves the tracker made, uncommitted, with the warning "not committed: …".
+func TestInitOwnBranchCommitFails(t *testing.T) {
+	tr := codeClone(t)
+	t.Setenv("GIT_AUTHOR_NAME", "") // git refuses an empty author name
+	code, out, errOut := tr.run("init", "--own-branch")
+	if code != 0 || !strings.HasPrefix(out, "initialized ") || !strings.HasPrefix(errOut, "cairn: warning: not committed: ") {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	if _, err := os.Stat(filepath.Join(tr.dir, ".cairn", ".git")); err != nil {
+		t.Fatal(err)
+	}
+}
