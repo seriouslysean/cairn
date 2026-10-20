@@ -18,5 +18,10 @@ Cairn is an issue tracker for coding agents first and people second. `docs/spec.
 - All writes go through `store.WriteFileAtomic`.
 - No personal data, machine paths or names from anyone's private setup in code, tests, docs or fixtures. Examples use
   generic names (alice, bob, skeptic, example-model-1).
-- One plan step per PR, on its own branch.
-- Commit messages: `type(scope): summary`, where type is feat, fix, test, docs or chore.
+- Commits and PRs follow the account's
+  [repo standards](https://github.com/seriouslysean/.github/blob/main/docs/repo-standards.md#issues-and-pull-requests):
+  `type(scope): summary`, where type is feat, fix, refactor, docs or chore. feat, fix and refactor need a GitHub issue
+  first, on a branch `<issue>-<slug>`. Anything else goes on `<type>/<slug>`, and its PR says `No issue: <type>`.
+- One plan step per PR, closing the step's issue. The step's tests-first commit is `chore(test): …`, since a commit of
+  tests alone is a chore.
+- This repository's issues are in GitHub Issues. It keeps no `.cairn/` tracker until Cairn can sync with GitHub.
