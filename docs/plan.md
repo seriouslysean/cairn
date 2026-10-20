@@ -245,8 +245,8 @@ It runs in the main checkout's top folder. It attaches `origin/cairn` when that 
 one with commit on write on. It never pushes.
 - `store.Find` follows a linked worktree's `.git` file to the main checkout's tracker when that is on its own branch.
   It reads files and runs no git: at 27 µs, against 8 ms to ask `git rev-parse`.
-- `init` without the flag will not start a second tracker: not where `origin/cairn` holds one, and not where a tracker
-  on its own branch already serves the folder.
+- `init` without the flag will not start a second tracker: not in a checkout's top folder where `origin/cairn` holds
+  one, and not where a tracker on its own branch already serves the folder.
 - `--branches` adds nothing on such a tracker.
 
 The contract is the package comment in `internal/cli/cli.go` and the doc comment of `store.Find`. It was built before
