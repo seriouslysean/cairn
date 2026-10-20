@@ -178,8 +178,9 @@ An agent with only the binary learns these from `cairn help`:
   `git clone --single-branch --branch cairn`. Otherwise it makes one, with commit on write on, the code's `origin` as
   its remote, and one commit of its files. It never pushes: `git -C .cairn push` shares the writes, and
   `git -C .cairn pull` brings in other people's.
-- `cairn init` without the flag will not start a second tracker: not where `origin/cairn` holds one (it names the
-  command that attaches it), and not where a tracker on its own branch already serves the folder.
+- `cairn init` without the flag will not start a second tracker: not in a checkout's top folder where `origin/cairn`
+  holds one (it names the command that attaches it), and not where a tracker on its own branch already serves the
+  folder.
 - A linked worktree, inside the repository or outside it, uses the main checkout's tracker when it has no `.cairn` of
   its own. Cairn follows the worktree's `.git` file to the `commondir` file git keeps for it, without running git. A
   bare repository's worktrees have no main checkout, so they find none.
