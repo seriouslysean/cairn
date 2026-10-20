@@ -31,7 +31,7 @@ const (
 	milestonesDir = "milestones"
 	issueFile     = "issue.md"
 	ignoreFile    = ".gitignore"
-	ignored       = ".index/\n"
+	ignored       = ".index/\n" + tempPattern + "\n"
 	docExt        = ".md" // issue, comment and milestone files
 )
 
@@ -145,7 +145,8 @@ func (s *Store) SaveConfig(c model.Config) error {
 }
 
 // Init makes dir/.cairn with config.yml (DefaultConfig's fields, empty body), an issues and a milestones folder, and
-// a .gitignore holding ".index/\n". It returns ErrExists when dir/.cairn already exists and changes nothing.
+// a .gitignore holding ".index/\n" and ".cairn-tmp-*\n", so git never sees WriteFileAtomic's temporary files. It
+// returns ErrExists when dir/.cairn already exists and changes nothing.
 func Init(dir string) (*Store, error) {
 	s := &Store{Dir: filepath.Join(dir, DirName)}
 	if _, err := os.Stat(s.Dir); err == nil {

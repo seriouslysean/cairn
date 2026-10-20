@@ -61,7 +61,7 @@ func TestInit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, want := range map[string]string{"config.yml": string(cfg), ".gitignore": ".index/\n"} {
+	for name, want := range map[string]string{"config.yml": string(cfg), ".gitignore": ".index/\n.cairn-tmp-*\n"} {
 		if got, err := os.ReadFile(filepath.Join(s.Dir, name)); err != nil || string(got) != want {
 			t.Errorf("%s: %q, %v", name, got, err)
 		}

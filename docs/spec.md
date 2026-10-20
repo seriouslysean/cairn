@@ -14,13 +14,17 @@ no editor, JSON on request.
   issues/7f3k/c-x9k2.md    one file per comment
   milestones/v0.4.md       one file per milestone
   .index/                  search cache, gitignored, rebuilt from the files
+  .gitignore               keeps .index/ and the temporary files of writes out of git
 ```
 
 - Every file starts with frontmatter: a strict subset of YAML (see `internal/doc`), with flat keys and values that are
   plain text, a double-quoted string, or a flow list `[a, b]`.
 - A comment is its own file, so two branches that comment on the same issue never conflict when they merge.
-- Every write replaces the whole file: it goes to a temporary file in the same folder, which is then renamed into place.
-  When two writers edit the same file at once, the last write wins. There is no lock and no queue.
+- Every write replaces the whole file: it goes to a temporary file in the same folder, which is then renamed into
+  place. When two writers edit the same file at once, the last write wins. There is no lock and no queue.
+- The temporary file's name starts with `.cairn-tmp-`, and the `.gitignore` that `cairn init` writes has the line
+  `.cairn-tmp-*`, so git never sees one, and commit on write never commits another writer's half-written file. A
+  tracker made before that line existed gets it by hand: add `.cairn-tmp-*` to `.cairn/.gitignore`.
 
 ### Issue
 ```
