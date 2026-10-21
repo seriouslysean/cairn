@@ -15,8 +15,9 @@
 // --json, success prints text on stdout and failure prints "cairn: <message>" on one line of stderr and nothing on
 // stdout. A command that succeeds with warnings still exits 0, and prints each warning in both modes as one line
 // "cairn: warning: <message>" on stderr. With --json, its envelope also has "warnings": [<message>, …], in the same
-// order, and without warnings it has no "warnings" key. A command that fails prints no warnings. ls and search also
-// have "total" in their envelope, after "data", as --limit below says; no other command's envelope has it.
+// order, and without warnings it has no "warnings" key. A command that fails prints no warnings. JSON writes <, > and &
+// as they are, not as \u003c, \u003e and \u0026. ls and search also have "total" in their envelope, after "data", as
+// --limit below says; no other command's envelope has it.
 //
 // Exit codes and error codes:
 //   - 0: ok.
@@ -458,10 +459,17 @@ func (c *call) warn(msg string) {
 // print writes out to stdout: its data in the success envelope with --json, else its text.
 func (c *call) print(out output, jsonOn bool) error {
 	if jsonOn {
-		return json.NewEncoder(c.env.Stdout).Encode(successJSON{OK: true, Data: out.data, Total: c.total, Warnings: c.warnings})
+		return writeJSON(c.env.Stdout, successJSON{OK: true, Data: out.data, Total: c.total, Warnings: c.warnings})
 	}
 	_, err := io.WriteString(c.env.Stdout, out.text)
 	return err
+}
+
+// writeJSON writes v to w as one line of JSON, with <, > and & as they are.
+func writeJSON(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	return enc.Encode(v)
 }
 
 // fail reports err as the package doc describes and returns its exit code.
@@ -469,7 +477,7 @@ func (c *call) fail(err error, jsonOn bool) int {
 	f := failureOf(err)
 	if jsonOn {
 		// Stdout has already failed if this does; the message still goes to stderr.
-		_ = json.NewEncoder(c.env.Stdout).Encode(failureJSON{Error: errorJSON{Code: f.code, Message: f.msg}})
+		_ = writeJSON(c.env.Stdout, failureJSON{Error: errorJSON{Code: f.code, Message: f.msg}})
 	}
 	fmt.Fprintln(c.env.Stderr, messagePrefix+f.msg)
 	return f.exit
