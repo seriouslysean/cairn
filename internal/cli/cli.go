@@ -4,8 +4,9 @@
 // --own-branch and --all take no value. Flags and positional arguments can come in any order, and "--" ends the
 // flags. A flag that takes a value takes the next argument even when it starts with "-", so "--tag -t" works, but not
 // one that starts with "--": that is a missing value, and "--name=--value" passes such a value. --tag can be
-// repeated; for any other flag the last one wins. No arguments at all is a usage error. "--help" and "-h" mean help,
-// and "--version" means version. search --meaning, which a later step builds, is a usage error until then. So are
+// repeated; for any other flag the last one wins. No arguments at all is a usage error. help with any arguments, and
+// "--help" or "-h" anywhere before "--" (even as a flag's value, and after any command), run help. "--version" means
+// version. search --meaning, which a later step builds, is a usage error until then. So are
 // --retracted anywhere but show, --branches anywhere but ls and show, --own-branch anywhere but init, and --limit
 // and --all anywhere but ls and search.
 //
@@ -251,9 +252,15 @@ const oneOrMore = -1
 // milestoneCommand is the command whose first argument names a subcommand in milestoneCommands.
 const milestoneCommand = "milestone"
 
+// helpCommand, helpFlag and helpShort ask for help, as wantsHelp reads them.
+const (
+	helpCommand = "help"
+	helpFlag    = flagPrefix + "help"
+	helpShort   = "-h"
+)
+
 var commands = map[string]command{
 	"version": {argsErr: "version takes no arguments", run: runVersion},
-	"help":    {argsErr: "help takes no arguments", run: runHelp},
 	"init":    {flags: []string{flagOwnBranch}, argsErr: "init takes no arguments", run: runInit},
 	"new": {flags: []string{flagBody, flagTag, flagMilestone, flagDue}, writes: true,
 		args: 1, argsErr: "new requires exactly one title argument", run: runNew},
@@ -283,7 +290,7 @@ var milestoneCommands = map[string]command{
 }
 
 // aliases are other names for commands.
-var aliases = map[string]string{"--version": "version", "--help": "help", "-h": "help"}
+var aliases = map[string]string{"--version": "version"}
 
 // call is one run of a command: its environment, its parsed arguments, what it wrote, and the warnings it gives.
 type call struct {
@@ -336,6 +343,9 @@ func (c *call) dispatch(args []string) (output, error) {
 	if len(args) == 0 {
 		return output{}, usageError("no command given (run `cairn help`)")
 	}
+	if wantsHelp(args) {
+		return runHelp(c)
+	}
 	name, args := args[0], args[1:]
 	if name == milestoneCommand {
 		if len(args) == 0 {
@@ -355,6 +365,22 @@ func (c *call) dispatch(args []string) (output, error) {
 		return output{}, usageError(fmt.Sprintf("unknown command %q", name))
 	}
 	return c.exec(name, cmd, args)
+}
+
+// wantsHelp reports whether args asks for help, as the package doc describes.
+func wantsHelp(args []string) bool {
+	if args[0] == helpCommand {
+		return true
+	}
+	for _, a := range args {
+		if a == endOfFlags {
+			return false
+		}
+		if a == helpFlag || a == helpShort {
+			return true
+		}
+	}
+	return false
 }
 
 // exec runs cmd, which name names, with args, and then commits what it wrote.
