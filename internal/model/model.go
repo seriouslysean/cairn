@@ -138,6 +138,8 @@ type Milestone struct {
 // Config is config.yml: frontmatter only, with an empty body. Every key is optional. Commit turns on commit on write.
 type Config struct {
 	Statuses       []string
+	Closed         []string
+	Archived       []string
 	TagGroups      []string
 	GitHubRepo     string
 	EmbeddingsURL  string

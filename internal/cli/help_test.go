@@ -13,7 +13,7 @@ var helpUsage = []string{
 	`edit <id> [--title t] [--body text] [--status s] [--tag +t|-t]... [--milestone m] [--due YYYY-MM-DD]`,
 	`rm <id>`,
 	`show <id> [--retracted] [--branches]`,
-	`ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD] [--branches] [--limit N | --all]`,
+	`ls [--status s] [--closed] [--archived] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD] [--branches] [--limit N | --all]`,
 	`comment <id> --kind evidence|decision|result [--source s] "text"`,
 	`retract <id> <comment> --reason "text" [--disproved-by <comment>]`,
 	`purge <id> <comment>`,
@@ -21,7 +21,7 @@ var helpUsage = []string{
 	`milestones`,
 	`milestone new <id> "title" [--due YYYY-MM-DD]`,
 	`milestone edit <id> [--title t] [--status s] [--due YYYY-MM-DD]`,
-	`search <words>... [--limit N | --all]`,
+	`search <words>... [--archived] [--limit N | --all]`,
 	`version`,
 	`help`,
 }
