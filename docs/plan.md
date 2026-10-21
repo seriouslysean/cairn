@@ -6,14 +6,6 @@ Each step is one PR, made like this:
    and must not change.
 3. The reviewer runs `scripts/check.sh`, reads the diff, and opens the PR.
 
-A drafter replies with every file it changes, in full, and nothing else:
-
-```
-=== FILE: internal/id/id.go
-<complete file>
-=== END FILE
-```
-
 ## Step 1: foundations
 IDs, atomic writes, and frontmatter. The tests and the stubs (which panic with "todo") are in the repo.
 
