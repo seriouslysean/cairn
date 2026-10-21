@@ -260,6 +260,34 @@ Read-only context:
 - internal/cli/ownbranch_test.go
 - internal/store/store_test.go
 
+## Step 12: closed and archived issues
+`ls` lists every issue, done ones included, so once most issues are done the list is mostly finished work (issue #45).
+And a tracker that keeps records for history, under a status such as `archived`, has them in `ls` and `search` alike.
+- `ls` leaves out closed issues unless given `--closed`, and archived ones unless given `--archived`. `--status s`
+  lists the issues with that status, whatever it is.
+- `search` leaves out archived issues unless given `--archived`. Closed issues are still searched: an agent runs
+  `search` before `new`, and a done issue can be the duplicate.
+- `show` reads any issue.
+- The config gains `closed` (default `[done]`) and `archived` (default `[archived]`), lists of statuses. A status in
+  both counts as archived.
+- `--all` still only lifts the row cap. Step 10 gave it that meaning, so a flag that adds rows of another kind needs a
+  name of its own. Kept apart, `ls --closed` stays capped and `ls --all` lists every open issue.
+
+A tracker without an `archived` status lists as before, except that `ls` leaves out done issues. The contract is the
+package comment in `internal/cli/cli.go` and the doc comments of `model.Config`.
+
+Drafter edits:
+- internal/cli/cli.go
+- internal/cli/help.go
+- internal/cli/lists.go
+- internal/model/model.go
+
+Read-only context:
+- docs/spec.md
+- internal/cli/closed_test.go
+- internal/cli/help_test.go
+- internal/model/model_test.go
+
 ## Later, in this order
 1. `pull`, one way: GitHub issues and their comments become Cairn issues and comments.
 2. `push`.

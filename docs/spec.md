@@ -80,6 +80,8 @@ empty.
 ```
 ---
 statuses: [backlog, open, in-progress, done]
+closed: [done]
+archived: [archived]
 tag_groups: [severity, effort, area]
 github_repo: owner/name
 embeddings_url: http://127.0.0.1:8080/v1/embeddings
@@ -89,6 +91,11 @@ commit: false
 ```
 Every key is optional. Shown above with the defaults, except that `github_repo` and `embeddings_url` are off when
 absent. `commit` is `true` or `false`.
+
+`closed` and `archived` name the statuses that count as closed, finished work, and archived, kept for history but not
+work (see "Closed and archived issues" below). A status in both counts as archived, a name that is not one of the
+`statuses` matches nothing, and an empty list `[]` names none. With the defaults, `done` is closed, and a tracker
+counts issues as archived only once its `statuses` list `archived`.
 
 ## IDs
 - Issues: 4 lowercase characters from Crockford's base32 alphabet (`0-9a-z` without `i l o u`), checked against existing
@@ -101,7 +108,7 @@ absent. `commit` is `true` or `false`.
 | Need | Command |
 |---|---|
 | Start | `cairn init [--own-branch]` |
-| Lists | `cairn tags`, `cairn milestones`, `cairn ls [--status s] [--tag t] [--milestone m] [--due-before d] [--branches] [--limit N \| --all]` |
+| Lists | `cairn tags`, `cairn milestones`, `cairn ls [--status s] [--closed] [--archived] [--tag t] [--milestone m] [--due-before d] [--branches] [--limit N \| --all]` |
 | Milestones | `cairn milestone new <id> "title" [--due d]`, `cairn milestone edit <id> [--title t] [--status s] [--due d]` |
 | Add | `cairn new "title" [--body text] [--tag t]... [--milestone m] [--due d]` |
 | Edit | `cairn edit <id> [--title t] [--body text] [--status s] [--tag +t] [--tag -t] [--milestone m] [--due d]` |
@@ -110,7 +117,7 @@ absent. `commit` is `true` or `false`.
 | Comment | `cairn comment <id> --kind evidence\|decision\|result [--source s] "text"` |
 | Retract | `cairn retract <id> <comment> --reason "…" [--disproved-by <comment>]` |
 | Purge | `cairn purge <id> <comment>` |
-| Search | `cairn search "words" [--limit N \| --all]`, `cairn search --meaning "text"` |
+| Search | `cairn search "words" [--archived] [--limit N \| --all]`, `cairn search --meaning "text"` |
 | Board | `cairn board`, `cairn board --html <file>` |
 | Sync | `cairn pull`, `cairn push [--dry-run]` |
 | Help | `cairn help`, `cairn version` |
@@ -131,6 +138,7 @@ above but are not built yet. They come in later steps of [plan.md](plan.md). Unt
   best matches. When rows are left out, the command warns `30 of 672 shown; --limit N or --all for more`. `"total"`
   is how many rows there were before the cut, whether or not any were cut. There are no pages: narrow with a filter
   or a better query.
+- `ls` lists open work, and `search` leaves out archived issues, as "Closed and archived issues" below says.
 - Exit codes:
   - 0: ok;
   - 1: error;
@@ -147,6 +155,16 @@ An agent with only the binary learns these from `cairn help`:
 - evidence needs --source, decision quotes the owner, result says what was done.
 - To close an issue, add a result comment, then cairn edit <id> --status done.
 - Retract a wrong comment instead of deleting it. purge is only for mistakes like a pasted secret.
+
+## Closed and archived issues
+- `ls` leaves out closed issues unless given `--closed`, and archived issues unless given `--archived`. The config's
+  `closed` and `archived` say which statuses those are.
+- `ls --status s` lists the issues whose status is `s`, whatever it is: `--status done` and `--status archived` need
+  no other flag.
+- `search` searches closed issues, but leaves out archived ones unless given `--archived`.
+- `show <id>` reads any issue, closed and archived ones included. `tags` and `milestones` count every issue.
+- `--all` only lifts the row cap: `ls --all` lists every open issue, and `ls --closed --archived --all` every issue.
+- With `--branches`, the branches' rows go through the same filter, with the checkout's config.
 
 ## Comments are data, not chat
 - A writer may add three kinds, and `comment` refuses anything else (`pull` also creates kind `github`, below):
