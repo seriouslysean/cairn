@@ -16,6 +16,9 @@ go install github.com/seriouslysean/cairn/cmd/cairn@latest
 cairn version
 ```
 
+`go install` puts `cairn` in `$(go env GOPATH)/bin`, or in `$(go env GOBIN)` when that is set. That folder has to be on
+your `PATH`, or `cairn version` says "command not found".
+
 ## Start
 
 ```sh
