@@ -12,6 +12,7 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -60,6 +61,8 @@ const (
 	keyRetractedReason = "retracted_reason"
 	keyDisprovedBy     = "disproved_by"
 	keyStatuses        = "statuses"
+	keyClosed          = "closed"
+	keyArchived        = "archived"
 	keyTagGroups       = "tag_groups"
 	keyGitHubRepo      = "github_repo"
 	keyEmbeddingsURL   = "embeddings_url"
@@ -135,9 +138,12 @@ type Milestone struct {
 	Body   string
 }
 
-// Config is config.yml: frontmatter only, with an empty body. Every key is optional. Commit turns on commit on write.
+// Config is config.yml: frontmatter only, with an empty body. Every key is optional. Closed and Archived name the
+// statuses that count as closed and archived, as IsClosed and IsArchived read them. Commit turns on commit on write.
 type Config struct {
 	Statuses       []string
+	Closed         []string
+	Archived       []string
 	TagGroups      []string
 	GitHubRepo     string
 	EmbeddingsURL  string
@@ -146,11 +152,14 @@ type Config struct {
 	Extra          []doc.Field
 }
 
-// DefaultConfig is the config used for absent keys: statuses [backlog, open, in-progress, done], tag groups
-// [severity, effort, area] and retracted_match 0.6, with GitHub sync, embeddings and commit on write off.
+// DefaultConfig is the config used for absent keys: statuses [backlog, open, in-progress, done], closed [done],
+// archived [archived], tag groups [severity, effort, area] and retracted_match 0.6, with GitHub sync, embeddings and
+// commit on write off.
 func DefaultConfig() Config {
 	return Config{
 		Statuses:       []string{"backlog", "open", "in-progress", "done"},
+		Closed:         []string{"done"},
+		Archived:       []string{"archived"},
 		TagGroups:      []string{"severity", "effort", "area"},
 		RetractedMatch: 0.6,
 	}
@@ -290,6 +299,8 @@ func ParseConfig(fields []doc.Field) (Config, error) {
 	r := newReader(fields)
 	c := Config{
 		Statuses:       r.list(keyStatuses, def.Statuses),
+		Closed:         r.list(keyClosed, def.Closed),
+		Archived:       r.list(keyArchived, def.Archived),
 		TagGroups:      r.list(keyTagGroups, def.TagGroups),
 		GitHubRepo:     r.text(keyGitHubRepo),
 		EmbeddingsURL:  r.text(keyEmbeddingsURL),
@@ -303,16 +314,29 @@ func ParseConfig(fields []doc.Field) (Config, error) {
 	return c, nil
 }
 
-// Fields returns the config's frontmatter in the order statuses, tag_groups, github_repo, embeddings_url,
-// retracted_match, commit, then Extra. github_repo and embeddings_url are left out when empty, and commit when false.
-// Numbers are written with strconv.FormatFloat(f, 'g', -1, 64).
+// Fields returns the config's frontmatter in the order statuses, closed, archived, tag_groups, github_repo,
+// embeddings_url, retracted_match, commit, then Extra. github_repo and embeddings_url are left out when empty, and
+// commit when false. Numbers are written with strconv.FormatFloat(f, 'g', -1, 64).
 func (c Config) Fields() []doc.Field {
 	var w writer
 	w.list(keyStatuses, c.Statuses)
+	w.list(keyClosed, c.Closed)
+	w.list(keyArchived, c.Archived)
 	w.list(keyTagGroups, c.TagGroups)
 	w.optText(keyGitHubRepo, c.GitHubRepo)
 	w.optText(keyEmbeddingsURL, c.EmbeddingsURL)
 	w.float(keyRetractedMatch, c.RetractedMatch)
 	w.optTrue(keyCommit, c.Commit)
 	return w.with(c.Extra)
+}
+
+// IsArchived reports whether status is one of the config's archived statuses.
+func (c Config) IsArchived(status string) bool {
+	return slices.Contains(c.Archived, status)
+}
+
+// IsClosed reports whether status is one of the config's closed statuses and not an archived one: a status in both
+// counts as archived.
+func (c Config) IsClosed(status string) bool {
+	return slices.Contains(c.Closed, status) && !c.IsArchived(status)
 }

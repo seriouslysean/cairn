@@ -63,6 +63,10 @@ func runLs(c *call) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
+	cfg, err := s.Config()
+	if err != nil {
+		return output{}, err
+	}
 	issues, err := s.ListIssues()
 	if err != nil {
 		return output{}, err
@@ -85,10 +89,13 @@ func runLs(c *call) (output, error) {
 		}
 		rows = append(rows, versions...)
 	}
-	status, milestone, tags := c.value(flagStatus), c.value(flagMilestone), c.values[flagTag]
+	status, byStatus := c.given(flagStatus)
+	milestone, tags := c.value(flagMilestone), c.values[flagTag]
+	closed, archived := c.switches[flagClosed], c.switches[flagArchived]
 	rows = slices.DeleteFunc(rows, func(v branchVersion) bool {
 		i := v.issue
-		return status != "" && i.Status != status ||
+		return byStatus && i.Status != status ||
+			!byStatus && hidden(cfg, i.Status, closed, archived) ||
 			milestone != "" && i.Milestone != milestone ||
 			slices.ContainsFunc(tags, func(t string) bool { return !slices.Contains(i.Tags, t) }) ||
 			byDue && (i.Due == "" || i.Due >= dueBefore)
@@ -147,12 +154,20 @@ func runSearch(c *call) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
+	cfg, err := s.Config()
+	if err != nil {
+		return output{}, err
+	}
 	issues, err := s.ListIssues()
 	if err != nil {
 		return output{}, err
 	}
+	archived := c.switches[flagArchived]
 	data := []searchJSON{}
 	for _, i := range issues {
+		if hidden(cfg, i.Status, true, archived) {
+			continue
+		}
 		comments, err := s.LoadComments(i.ID)
 		if err != nil {
 			return output{}, err
@@ -168,6 +183,12 @@ func runSearch(c *call) (output, error) {
 		fmt.Fprintf(&text, "%s\t%d\t%s\n", hit.ID, hit.Matches, hit.Title)
 	}
 	return output{data, text.String()}, nil
+}
+
+// hidden reports whether ls or search leaves out an issue with status: a closed one unless closed is true, and an
+// archived one unless archived is true.
+func hidden(cfg model.Config, status string, closed, archived bool) bool {
+	return !closed && cfg.IsClosed(status) || !archived && cfg.IsArchived(status)
 }
 
 // searchText is the text search looks in: the issue's title and body, and the bodies and sources of its active

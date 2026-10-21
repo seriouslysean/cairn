@@ -1,14 +1,14 @@
 // Package cli runs cairn's commands. It never prompts and never opens an editor.
 //
 // Arguments: flags start with "--" and take "--name value" or "--name=value"; --json, --retracted, --branches,
-// --own-branch and --all take no value. Flags and positional arguments can come in any order, and "--" ends the
-// flags. A flag that takes a value takes the next argument even when it starts with "-", so "--tag -t" works, but not
-// one that starts with "--": that is a missing value, and "--name=--value" passes such a value. --tag can be
-// repeated; for any other flag the last one wins. No arguments at all is a usage error. help with any arguments, and
-// "--help" or "-h" anywhere before "--" (even as a flag's value, and after any command), run help. "--version" means
-// version. search --meaning, which a later step builds, is a usage error until then. So are
-// --retracted anywhere but show, --branches anywhere but ls and show, --own-branch anywhere but init, and --limit
-// and --all anywhere but ls and search.
+// --own-branch, --closed, --archived and --all take no value. Flags and positional arguments can come in any order,
+// and "--" ends the flags. A flag that takes a value takes the next argument even when it starts with "-", so
+// "--tag -t" works, but not one that starts with "--": that is a missing value, and "--name=--value" passes such a
+// value. --tag can be repeated; for any other flag the last one wins. No arguments at all is a usage error. help with
+// any arguments, and "--help" or "-h" anywhere before "--" (even as a flag's value, and after any command), run help.
+// "--version" means version. search --meaning, which a later step builds, is a usage error until then. So are
+// --retracted anywhere but show, --branches anywhere but ls and show, --own-branch anywhere but init, --closed
+// anywhere but ls, and --archived, --limit and --all anywhere but ls and search.
 //
 // Output: --json anywhere before "--" turns on JSON, even when the other arguments are wrong. With --json, success
 // prints {"ok": true, "data": …} and failure prints
@@ -75,21 +75,24 @@
 //     it; a removed tag only has to be non-empty, so a tag whose group left the config can still go. An empty
 //     --milestone or --due clears it. updated becomes Env.Now as in new. Text: the id and "\n". Data: the issue.
 //   - rm <id>: deletes the issue folder, comments included. Text: "removed <id>\n". Data: {"id": id}.
-//   - show <id> [--retracted]: Text: the issue for a person to read, with its by, persona and model when set, then
-//     its active comments in order, each with its id, kind, by, persona and model when set, at, source when set, and
-//     body. --retracted adds the retracted comments in their places, each marked "retracted" with its retracted_by,
-//     retracted_at, reason and disproved_by. Data: the issue plus "comments", its active comments in order (all of
-//     them with --retracted), a list never null.
-//   - ls [--status s] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]: lists issues in store order. Every filter
-//     given must match; --due-before keeps issues with a due date before d. Text: one "<id>\t<status>\t<title>\n"
-//     line per issue. Data: a list of issues without "body" (an empty list, never null).
+//   - show <id> [--retracted]: reads any issue, closed and archived ones included. Text: the issue for a person to
+//     read, with its by, persona and model when set, then its active comments in order, each with its id, kind, by,
+//     persona and model when set, at, source when set, and body. --retracted adds the retracted comments in their
+//     places, each marked "retracted" with its retracted_by, retracted_at, reason and disproved_by. Data: the issue
+//     plus "comments", its active comments in order (all of them with --retracted), a list never null.
+//   - ls [--status s] [--closed] [--archived] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]: lists issues in
+//     store order. Every filter given must match; --due-before keeps issues with a due date before d. Without
+//     --status, ls leaves out closed issues unless --closed is given, and archived issues unless --archived is
+//     given, as the config's closed and archived name them (model.Config.IsClosed and IsArchived); with --status s,
+//     it keeps the issues whose status is s, whatever s is. Text: one "<id>\t<status>\t<title>\n" line per issue.
+//     Data: a list of issues without "body" (an empty list, never null).
 //   - --branches, on ls and show, adds what active branches committed, as branchIssues reads it. Without it, commit on
 //     write and init, Cairn never runs git. With it, failing to read git (no git, no repository, no default branch) is
 //     an "error", and a branch file that cannot be read or does not parse is a warning that names the branch and the
 //     issue. On a tracker on its own branch it adds nothing and runs no git.
-//   - ls --branches: the checkout's rows, then the branch versions, all through the same filters. Text: a branch
-//     version's line is "<id>\t<status>\t<title>\t<branch>\n". Data: every item also has "branch" ("" for the
-//     checkout).
+//   - ls --branches: the checkout's rows, then the branch versions, all through the same filters, with the
+//     checkout's config. Text: a branch version's line is "<id>\t<status>\t<title>\t<branch>\n". Data: every item
+//     also has "branch" ("" for the checkout).
 //   - show <id> --branches: the checkout's version of the issue, then each branch version of it, by branch;
 //     not_found when there is none. It reads only that issue from each branch, so its warnings are about that issue.
 //     --retracted applies to each version. Text: each version as show prints it, a branch version after a line
@@ -127,10 +130,11 @@
 //     that does not parse is an "error". Text: the id and "\n". Data: the milestone.
 //   - milestone with no subcommand, or any other subcommand, is a usage error. The subcommand is the argument right
 //     after milestone.
-//   - search <words>...: the positional arguments joined by spaces are the query, and its words are words.Split of
-//     it; a query with no words is a usage error. An issue's matches are the query words found among the words of
-//     its title, its body, and the bodies and sources of its active comments; tags are not searched. Issues with at
-//     least one match are listed by matches, most first, then in store order. Text: one
+//   - search <words>... [--archived]: the positional arguments joined by spaces are the query, and its words are
+//     words.Split of it; a query with no words is a usage error. Archived issues, as ls reads them, are left out
+//     unless --archived is given; closed ones are searched. An issue's matches are the query words found among the
+//     words of its title, its body, and the bodies and sources of its active comments; tags are not searched. Issues
+//     with at least one match are listed by matches, most first, then in store order. Text: one
 //     "<id>\t<matches>\t<title>\n" line each. Data: a list of issues without "body", each with "matches" added (an
 //     empty list, never null, when nothing matches).
 //   - --limit N and --all, on ls and search, cap the rows they print. Without either, they print at most
@@ -225,6 +229,8 @@ const (
 	flagOwnBranch   = "own-branch"
 	flagLimit       = "limit"
 	flagAll         = "all"
+	flagClosed      = "closed"
+	flagArchived    = "archived"
 )
 
 const (
@@ -233,7 +239,8 @@ const (
 )
 
 // switches are the flags that take no value. Every other flag takes one.
-var switches = map[string]bool{flagJSON: true, flagRetracted: true, flagBranches: true, flagOwnBranch: true, flagAll: true}
+var switches = map[string]bool{flagJSON: true, flagRetracted: true, flagBranches: true, flagOwnBranch: true,
+	flagAll: true, flagClosed: true, flagArchived: true}
 
 // actorFlags are the flags every write takes.
 var actorFlags = []string{flagAs, flagPersona, flagModel}
@@ -270,7 +277,8 @@ var commands = map[string]command{
 	"rm": {writes: true, args: 1, argsErr: "rm requires exactly one issue id", run: runRm},
 	"show": {flags: []string{flagRetracted, flagBranches},
 		args: 1, argsErr: "show requires exactly one issue id", run: runShow},
-	"ls": {flags: []string{flagStatus, flagTag, flagMilestone, flagDueBefore, flagBranches, flagLimit, flagAll},
+	"ls": {flags: []string{flagStatus, flagClosed, flagArchived, flagTag, flagMilestone, flagDueBefore, flagBranches,
+		flagLimit, flagAll},
 		argsErr: "ls takes no positional arguments", run: runLs},
 	"comment": {flags: []string{flagKind, flagSource}, writes: true,
 		args: 2, argsErr: "comment requires exactly one issue id and one text", run: runComment},
@@ -280,7 +288,8 @@ var commands = map[string]command{
 		args: 2, argsErr: "purge requires exactly one issue id and one comment id", run: runPurge},
 	"tags":       {argsErr: "tags takes no positional arguments", run: runTags},
 	"milestones": {argsErr: "milestones takes no positional arguments", run: runMilestones},
-	"search":     {flags: []string{flagLimit, flagAll}, args: oneOrMore, argsErr: "search requires at least one word", run: runSearch},
+	"search": {flags: []string{flagArchived, flagLimit, flagAll},
+		args: oneOrMore, argsErr: "search requires at least one word", run: runSearch},
 }
 
 var milestoneCommands = map[string]command{
