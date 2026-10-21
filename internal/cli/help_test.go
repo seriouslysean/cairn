@@ -62,3 +62,32 @@ func TestHelpJSON(t *testing.T) {
 		t.Fatalf("got  %q\nwant %q", got, want)
 	}
 }
+
+// An agent's first guesses at help get it: help with any arguments, and --help or -h on any command, before "--".
+func TestHelpAnywhere(t *testing.T) {
+	empty := &tracker{t: t, dir: t.TempDir(), now: t0, rnd: &seq{}}
+	_, want, _ := empty.run("help")
+	for _, args := range [][]string{
+		{"help", "new"},
+		{"help", "--tag", "x"},
+		{"new", "--help"},
+		{"new", "title", "-h"},
+		{"ls", "--status", "-h"},
+		{"milestone", "new", "--help"},
+		{"nosuch", "-h"},
+	} {
+		if code, out, errOut := empty.run(args...); code != 0 || out != want || errOut != "" {
+			t.Errorf("%q: exit %d, stderr %q\ngot\n%s\nwant\n%s", args, code, errOut, out, want)
+		}
+	}
+
+	_, wantData, _ := empty.json("help")
+	if code, data, errOut := empty.json("new", "--help"); code != 0 || string(data) != string(wantData) || errOut != "" {
+		t.Errorf("new --help --json: exit %d, stderr %q, data %s, want %s", code, errOut, data, wantData)
+	}
+
+	// After "--", -h is an argument like any other.
+	if code, out, _ := empty.run("show", "--", "-h"); code == 0 || out != "" {
+		t.Errorf("show -- -h: exit %d, out %q; want a failure, not help", code, out)
+	}
+}
