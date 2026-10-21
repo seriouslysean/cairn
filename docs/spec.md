@@ -124,7 +124,8 @@ above but are not built yet. They come in later steps of [plan.md](plan.md). Unt
   records the actor as `retracted_by`.
 - Every command takes `--json`. On success it prints `{"ok": true, "data": …}`, plus `"warnings": ["…"]` when it
   gave warnings, the same ones stderr gets, and on `ls` and `search` `"total"`. On failure it prints
-  `{"ok": false, "error": {"code": "…", "message": "…"}}` on stdout, and a one-line message on stderr.
+  `{"ok": false, "error": {"code": "…", "message": "…"}}` on stdout, and a one-line message on stderr. `<`, `>` and
+  `&` come out as they are, not escaped.
 - `ls` and `search` print at most 30 rows: `--limit N` prints at most N, and `--all` every row. The cut comes after
   the filters and the sort. `ls` keeps its last rows, the newest issues and then the branches' rows, and `search` its
   best matches. When rows are left out, the command warns `30 of 672 shown; --limit N or --all for more`. `"total"`
