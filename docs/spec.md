@@ -136,7 +136,8 @@ above but are not built yet. They come in later steps of [plan.md](plan.md). Unt
   - 2: usage;
   - 4: not found (3 is not used).
 - `help` prints a line that says what `--json` prints, one usage line per command, then the rules below, word for
-  word. With `--json` its data is `{"usage": [...], "rules": [...]}`.
+  word. With `--json` its data is `{"usage": [...], "rules": [...]}`. `help` with any arguments, and `--help` or `-h`
+  on any command before `--`, print the same and exit 0.
 
 ## Rules
 An agent with only the binary learns these from `cairn help`:
