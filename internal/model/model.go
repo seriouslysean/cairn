@@ -67,6 +67,9 @@ const (
 	keyCommit          = "commit"
 )
 
+// TagGroupsKey is the config.yml key that lists the tag groups.
+const TagGroupsKey = keyTagGroups
+
 // Issue is the issue.md file of an issue folder. Required keys: id, title, status, created, updated. The others are
 // left out of the file when empty (GitHub when 0).
 type Issue struct {

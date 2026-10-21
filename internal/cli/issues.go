@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -316,7 +317,8 @@ func checkTag(t string, cfg model.Config) error {
 		return usageError(fmt.Sprintf("tag %q contains an invalid character", t))
 	}
 	if group, _, ok := strings.Cut(t, tagGroupSep); ok && !slices.Contains(cfg.TagGroups, group) {
-		return usageError(fmt.Sprintf("tag group %q is not in the config", group))
+		return usageError(fmt.Sprintf("tag group %q is not in the config: add it to %s in %s",
+			group, model.TagGroupsKey, filepath.Join(store.DirName, store.ConfigFile)))
 	}
 	return nil
 }

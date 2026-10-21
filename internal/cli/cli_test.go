@@ -612,3 +612,16 @@ func TestCRLFFiles(t *testing.T) {
 		t.Fatalf("new gave %q, show gives %q", added.Body, got.Body)
 	}
 }
+
+// A tag whose group is not in the config says where the groups are set.
+func TestTagGroupErrorSaysWhere(t *testing.T) {
+	tr := newTracker(t)
+	id := tr.issue("new", "title").ID
+	want := `cairn: tag group "kind" is not in the config: add it to tag_groups in ` +
+		filepath.Join(".cairn", "config.yml") + "\n"
+	for _, args := range [][]string{{"new", "other", "--tag", "kind:bug"}, {"edit", id, "--tag", "kind:bug"}} {
+		if code, _, errOut := tr.run(args...); code != ExitUsage || errOut != want {
+			t.Errorf("%q: exit %d, stderr %q, want %q", args, code, errOut, want)
+		}
+	}
+}
