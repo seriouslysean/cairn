@@ -24,7 +24,7 @@ var commandUsage = []string{
 	`edit <id> [--title t] [--body text] [--status s] [--tag +t|-t]... [--milestone m] [--due YYYY-MM-DD]`,
 	`rm <id>`,
 	`show <id> [--retracted] [--branches]`,
-	`ls [--status s] [--closed] [--archived] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD] [--branches] [--limit N | --all]`,
+	`ls [--status s] [--closed] [--archived] [--owed] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD] [--branches] [--limit N | --all]`,
 	`comment <id> --kind evidence|decision|result [--source s] "text"`,
 	`retract <id> <comment> --reason "text" [--disproved-by <comment>]`,
 	`purge <id> <comment>`,

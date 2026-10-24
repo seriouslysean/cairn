@@ -1,14 +1,14 @@
 // Package cli runs cairn's commands. It never prompts and never opens an editor.
 //
 // Arguments: flags start with "--" and take "--name value" or "--name=value"; --json, --retracted, --branches,
-// --own-branch, --closed, --archived and --all take no value. Flags and positional arguments can come in any order,
-// and "--" ends the flags. A flag that takes a value takes the next argument even when it starts with "-", so
+// --own-branch, --closed, --archived, --owed and --all take no value. Flags and positional arguments can come in any
+// order, and "--" ends the flags. A flag that takes a value takes the next argument even when it starts with "-", so
 // "--tag -t" works, but not one that starts with "--": that is a missing value, and "--name=--value" passes such a
 // value. --tag can be repeated; for any other flag the last one wins. No arguments at all is a usage error. help with
 // any arguments, and "--help" or "-h" anywhere before "--" (even as a flag's value, and after any command), run help.
 // "--version" means version. search --meaning, which a later step builds, is a usage error until then. So are
 // --retracted anywhere but show, --branches anywhere but ls and show, --own-branch anywhere but init, --closed
-// anywhere but ls, and --archived, --limit and --all anywhere but ls and search.
+// and --owed anywhere but ls, and --archived, --limit and --all anywhere but ls and search.
 //
 // Output: --json anywhere before "--" turns on JSON, even when the other arguments are wrong. With --json, success
 // prints {"ok": true, "data": …} and failure prints
@@ -80,8 +80,9 @@
 //     persona and model when set, at, source when set, and body. --retracted adds the retracted comments in their
 //     places, each marked "retracted" with its retracted_by, retracted_at, reason and disproved_by. Data: the issue
 //     plus "comments", its active comments in order (all of them with --retracted), a list never null.
-//   - ls [--status s] [--closed] [--archived] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]: lists issues in
-//     store order. Every filter given must match; --due-before keeps issues with a due date before d. Without
+//   - ls [--status s] [--closed] [--archived] [--owed] [--tag t]... [--milestone m] [--due-before YYYY-MM-DD]: lists
+//     issues in store order. Every filter given must match; --due-before keeps issues with a due date before d, and
+//     --owed keeps issues whose latest active decision comment has no active result comment with a later at. Without
 //     --status, ls leaves out closed issues unless --closed is given, and archived issues unless --archived is
 //     given, as the config's closed and archived name them (model.Config.IsClosed and IsArchived); with --status s,
 //     it keeps the issues whose status is s, whatever s is. Text: one "<id>\t<status>\t<title>\n" line per issue.
@@ -231,6 +232,7 @@ const (
 	flagAll         = "all"
 	flagClosed      = "closed"
 	flagArchived    = "archived"
+	flagOwed        = "owed"
 )
 
 const (
@@ -240,7 +242,7 @@ const (
 
 // switches are the flags that take no value. Every other flag takes one.
 var switches = map[string]bool{flagJSON: true, flagRetracted: true, flagBranches: true, flagOwnBranch: true,
-	flagAll: true, flagClosed: true, flagArchived: true}
+	flagAll: true, flagClosed: true, flagArchived: true, flagOwed: true}
 
 // actorFlags are the flags every write takes.
 var actorFlags = []string{flagAs, flagPersona, flagModel}
@@ -277,8 +279,8 @@ var commands = map[string]command{
 	"rm": {writes: true, args: 1, argsErr: "rm requires exactly one issue id", run: runRm},
 	"show": {flags: []string{flagRetracted, flagBranches},
 		args: 1, argsErr: "show requires exactly one issue id", run: runShow},
-	"ls": {flags: []string{flagStatus, flagClosed, flagArchived, flagTag, flagMilestone, flagDueBefore, flagBranches,
-		flagLimit, flagAll},
+	"ls": {flags: []string{flagStatus, flagClosed, flagArchived, flagOwed, flagTag, flagMilestone, flagDueBefore,
+		flagBranches, flagLimit, flagAll},
 		argsErr: "ls takes no positional arguments", run: runLs},
 	"comment": {flags: []string{flagKind, flagSource}, writes: true,
 		args: 2, argsErr: "comment requires exactly one issue id and one text", run: runComment},

@@ -288,6 +288,28 @@ Read-only context:
 - internal/cli/help_test.go
 - internal/model/model_test.go
 
+## Step 13: owed decisions
+A decision comment records what the owner approved and a result what was done, but `ls` cannot show where a decision
+has no result (issue #54). Without that, an agent has to `show` every issue to find approved work nobody built.
+- `ls --owed` keeps the issues whose latest active decision has no active result with a later `at`. Retracted comments
+  count on neither side, and a result at the same instant as the decision is not after it.
+- It combines with every other `ls` filter and with `--branches`, where a branch version is judged by its own comments.
+  Closed and archived issues stay hidden unless asked for.
+- The checkout's comments are read only for the rows the other filters kept.
+
+The name follows one-word state filters: Taskwarrior's READY and OVERDUE virtual tags, beads' `bd list --overdue`, and
+`--closed` and `--archived` here. The contract is the package comment in `internal/cli/cli.go`.
+
+Drafter edits:
+- internal/cli/cli.go
+- internal/cli/help.go
+- internal/cli/lists.go
+
+Read-only context:
+- docs/spec.md
+- internal/cli/owed_test.go
+- internal/cli/help_test.go
+
 ## Later, in this order
 1. `pull`, one way: GitHub issues and their comments become Cairn issues and comments.
 2. `push`.
