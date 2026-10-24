@@ -108,7 +108,7 @@ counts issues as archived only once its `statuses` list `archived`.
 | Need | Command |
 |---|---|
 | Start | `cairn init [--own-branch]` |
-| Lists | `cairn tags`, `cairn milestones`, `cairn ls [--status s] [--closed] [--archived] [--tag t] [--milestone m] [--due-before d] [--branches] [--limit N \| --all]` |
+| Lists | `cairn tags`, `cairn milestones`, `cairn ls [--status s] [--closed] [--archived] [--owed] [--tag t] [--milestone m] [--due-before d] [--branches] [--limit N \| --all]` |
 | Milestones | `cairn milestone new <id> "title" [--due d]`, `cairn milestone edit <id> [--title t] [--status s] [--due d]` |
 | Add | `cairn new "title" [--body text] [--tag t]... [--milestone m] [--due d]` |
 | Edit | `cairn edit <id> [--title t] [--body text] [--status s] [--tag +t] [--tag -t] [--milestone m] [--due d]` |
@@ -171,6 +171,9 @@ An agent with only the binary learns these from `cairn help`:
   - `evidence` requires `--source`: a URL, a file and line, a log path or a command;
   - `decision` holds the owner's words, quoted;
   - `result` is what was done: a PR, a commit or test output.
+- `ls --owed` lists the issues whose latest active decision has no active result with a later `at`: what the owner
+  approved and nobody has recorded as done. Evidence does not count, and an issue with no decision is not owed. A
+  decision that needs nothing built gets a result that says so.
 - `retract` keeps the comment where it is and adds the retracted fields.
 - `show` leaves retracted comments out, in text and in `--json`. `show --retracted` includes them, marked.
 - A new comment whose word-overlap score (below) with a retracted comment on the same issue reaches `retracted_match`

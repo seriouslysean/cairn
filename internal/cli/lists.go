@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/seriouslysean/cairn/internal/model"
 	"github.com/seriouslysean/cairn/internal/store"
@@ -100,6 +101,23 @@ func runLs(c *call) (output, error) {
 			slices.ContainsFunc(tags, func(t string) bool { return !slices.Contains(i.Tags, t) }) ||
 			byDue && (i.Due == "" || i.Due >= dueBefore)
 	})
+	if c.switches[flagOwed] {
+		kept := rows[:0]
+		for _, v := range rows {
+			// A branch version carries its comments; the checkout's are read one issue at a time, and only for the
+			// rows the other filters kept.
+			comments := v.comments
+			if v.branch == "" {
+				if comments, err = s.LoadComments(v.issue.ID); err != nil {
+					return output{}, err
+				}
+			}
+			if owed(comments) {
+				kept = append(kept, v)
+			}
+		}
+		rows = kept
+	}
 	rows = keep(c, rows, limit, true)
 	data := make([]lsJSON, len(rows))
 	var text strings.Builder
@@ -183,6 +201,21 @@ func runSearch(c *call) (output, error) {
 		fmt.Fprintf(&text, "%s\t%d\t%s\n", hit.ID, hit.Matches, hit.Title)
 	}
 	return output{data, text.String()}, nil
+}
+
+// owed reports whether the latest active decision among comments has no active result with a later at.
+func owed(comments []model.Comment) bool {
+	var decided, done time.Time
+	for _, c := range comments {
+		switch {
+		case c.Retracted():
+		case c.Kind == model.KindDecision && c.At.After(decided):
+			decided = c.At
+		case c.Kind == model.KindResult && c.At.After(done):
+			done = c.At
+		}
+	}
+	return !decided.IsZero() && !done.After(decided)
 }
 
 // hidden reports whether ls or search leaves out an issue with status: a closed one unless closed is true, and an
