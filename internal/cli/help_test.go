@@ -34,6 +34,7 @@ var helpRules = []string{
 	"Retract a wrong comment instead of deleting it. purge is only for mistakes like a pasted secret.",
 	"One deliverable per issue: a decision that adds another deliverable becomes a new issue that names its parent.",
 	"When you stop before an issue is done, add an evidence comment that says what is done and what is left.",
+	"To park an issue on purpose, add a result comment that names what brings it back, and leave it open.",
 }
 
 // help is the only documentation an agent with just the binary has, so it gives every command's usage and the rules.
