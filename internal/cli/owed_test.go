@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"reflect"
 	"testing"
 	"time"
 )
@@ -86,22 +85,43 @@ func TestLsOwedWithFilters(t *testing.T) {
 	}
 }
 
-// ls --branches --owed reads a branch version's own comments.
+// ls --branches --owed judges a branch version by its own comments, not the checkout's.
 func TestLsBranchesOwed(t *testing.T) {
 	tr := gitTracker(t, "main", ".")
 	ids := tr.many(2, "issue")
 	tr.say(ids[0], "decision")
-	tr.say(ids[1], "decision")
-	tr.commit(t0.Add(-36*time.Hour), "two decisions")
-	tr.git("switch", "-q", "-c", "feat")
 	tr.say(ids[0], "result")
+	tr.say(ids[1], "decision")
+	tr.commit(t0.Add(-36*time.Hour), "decisions")
+	tr.git("switch", "-q", "-c", "feat")
+	tr.say(ids[0], "decision")
 	tr.commit(t0.Add(-time.Hour), "feat")
 	tr.git("switch", "-q", "main")
 	tr.say(ids[1], "result")
+	// The checkout owes nothing; feat's version of ids[0] owes its new decision.
 	env, _ := tr.envelope("ls", "--branches", "--owed")
-	if got, want := rowIDs(t, env), []string{ids[0]}; !reflect.DeepEqual(got, want) {
-		t.Errorf("rows %q, want %q", got, want)
+	items, _ := env["data"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("rows %v, want feat's %s", items, ids[0])
 	}
+	if row := items[0].(map[string]any); row["id"] != ids[0] || row["branch"] != "feat" {
+		t.Errorf("row %v, want %s on feat", row, ids[0])
+	}
+	checkRows(t, tr, []string{"ls", "--owed"}, []string{})
+}
+
+// Only at orders comments: a result said later but dated before the decision does not pay it.
+func TestLsOwedByAt(t *testing.T) {
+	tr := newTracker(t)
+	id := tr.issue("new", "one").ID
+	tr.now = t0.Add(time.Hour)
+	tr.comment("comment", id, "--kind", "decision", "go")
+	tr.now = t0.Add(time.Minute)
+	tr.comment("comment", id, "--kind", "result", "done")
+	checkRows(t, tr, []string{"ls", "--owed"}, []string{id})
+	tr.now = t0.Add(2 * time.Hour)
+	tr.comment("comment", id, "--kind", "result", "done")
+	checkRows(t, tr, []string{"ls", "--owed"}, []string{})
 }
 
 func TestOwedUsageErrors(t *testing.T) {
