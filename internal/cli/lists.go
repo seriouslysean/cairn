@@ -102,15 +102,21 @@ func runLs(c *call) (output, error) {
 			byDue && (i.Due == "" || i.Due >= dueBefore)
 	})
 	if c.switches[flagOwed] {
-		for n, v := range rows {
-			// A branch version carries its comments; the checkout's are read only for the rows the filters kept.
+		kept := rows[:0]
+		for _, v := range rows {
+			// A branch version carries its comments; the checkout's are read one issue at a time, and only for the
+			// rows the other filters kept.
+			comments := v.comments
 			if v.branch == "" {
-				if rows[n].comments, err = s.LoadComments(v.issue.ID); err != nil {
+				if comments, err = s.LoadComments(v.issue.ID); err != nil {
 					return output{}, err
 				}
 			}
+			if owed(comments) {
+				kept = append(kept, v)
+			}
 		}
-		rows = slices.DeleteFunc(rows, func(v branchVersion) bool { return !owed(v.comments) })
+		rows = kept
 	}
 	rows = keep(c, rows, limit, true)
 	data := make([]lsJSON, len(rows))
