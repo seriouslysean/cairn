@@ -17,7 +17,8 @@ Cairn is an issue tracker for coding agents first and people second. `docs/spec.
 - Every command works without prompts or an editor, takes `--json`, and uses the exit codes in `docs/spec.md`.
 - All writes go through `store.WriteFileAtomic`.
 - No personal data, machine paths or names from anyone's private setup in code, tests, docs or fixtures. Examples use
-  generic names (alice, bob, skeptic, example-model-1).
+  generic names with a `test-` prefix (test-agent, test-owner, test-persona, test-model), so one search finds them.
+  Older examples change when a change already touches them.
 - Commits and PRs follow the account's
   [repo standards](https://github.com/seriouslysean/.github/blob/main/docs/repo-standards.md#issues-and-pull-requests):
   `type(scope): summary`, where type is feat, fix, refactor, docs or chore. feat, fix and refactor need a GitHub issue
