@@ -44,6 +44,6 @@ var agentRules = []string{
 	"evidence needs --source, decision quotes the owner, result says what was done.",
 	"To close an issue, add a result comment, then cairn edit <id> --status done.",
 	"Retract a wrong comment instead of deleting it. purge is only for mistakes like a pasted secret.",
-	"One deliverable per issue: a decision that adds scope becomes a new issue that names its parent.",
-	"When you end or hand off work on an issue, comment where it stands and release it.",
+	"One deliverable per issue: a decision that adds another deliverable becomes a new issue that names its parent.",
+	"When you stop before an issue is done, add an evidence comment that says what is done and what is left.",
 }
