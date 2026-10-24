@@ -157,6 +157,7 @@ An agent with only the binary learns these from `cairn help`:
 - Retract a wrong comment instead of deleting it. purge is only for mistakes like a pasted secret.
 - One deliverable per issue: a decision that adds another deliverable becomes a new issue that names its parent.
 - When you stop before an issue is done, add an evidence comment that says what is done and what is left.
+- To park an issue on purpose, add a result comment that names what brings it back, and leave it open.
 
 ## Closed and archived issues
 - `ls` leaves out closed issues unless given `--closed`, and archived issues unless given `--archived`. The config's
@@ -175,7 +176,7 @@ An agent with only the binary learns these from `cairn help`:
   - `result` is what was done: a PR, a commit or test output.
 - `ls --owed` lists the issues whose latest active decision has no active result with a later `at`: what the owner
   approved and nobody has recorded as done. Evidence does not count, and an issue with no decision is not owed. A
-  decision that needs nothing built gets a result that says so.
+  decision that needs nothing built gets a result that says so, and so does a parked issue, naming what brings it back.
 - `retract` keeps the comment where it is and adds the retracted fields.
 - `show` leaves retracted comments out, in text and in `--json`. `show --retracted` includes them, marked.
 - A new comment whose word-overlap score (below) with a retracted comment on the same issue reaches `retracted_match`
