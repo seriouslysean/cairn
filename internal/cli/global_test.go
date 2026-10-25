@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -253,5 +254,138 @@ func TestDirFlagErrors(t *testing.T) {
 	// After "--", -C is a plain argument.
 	if code, out, errOut := g.work.run("search", "--", "-C"); code != 0 || out != "" {
 		t.Fatalf("search -- -C: exit %d, %q, %q", code, out, errOut)
+	}
+}
+
+// Every command that reads or writes a tracker reaches the global one, not only the ones above.
+func TestGlobalTrackerEveryCommand(t *testing.T) {
+	g := newGlobalSetup(t)
+	id := g.work.issue("new", "To change").ID
+	commentID := func() string {
+		_, data, _ := g.work.json("comment", id, "--kind", "result", "done")
+		var got struct {
+			Comment struct {
+				ID string `json:"id"`
+			} `json:"comment"`
+		}
+		if err := json.Unmarshal(data, &got); err != nil || got.Comment.ID == "" {
+			t.Fatalf("comment: %s", data)
+		}
+		return got.Comment.ID
+	}
+	first, second := commentID(), commentID()
+	for _, args := range [][]string{
+		{"show", id},
+		{"edit", id, "--title", "Changed"},
+		{"retract", id, first, "--reason", "wrong"},
+		{"purge", id, second},
+		{"milestone", "new", "v2", "Two"},
+		{"milestone", "edit", "v2", "--title", "Second"},
+		{"milestones"},
+		{"rm", id},
+	} {
+		if code, _, errOut := g.work.run(args...); code != 0 {
+			t.Fatalf("%q: exit %d: %s", args, code, errOut)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(g.global.dir, ".cairn", "issues", id)); !os.IsNotExist(err) {
+		t.Fatalf("rm did not remove the issue from the global tracker: %v", err)
+	}
+	if code, out, _ := g.global.run("milestones"); code != 0 || !strings.Contains(out, "Second") {
+		t.Fatalf("milestone edit did not reach the global tracker: %q", out)
+	}
+}
+
+// With a config in both places, naming different trackers, $XDG_CONFIG_HOME's wins.
+func TestXDGConfigHomeWinsOverHome(t *testing.T) {
+	g := newGlobalSetup(t)
+	other := newTracker(t)
+	xdg := t.TempDir()
+	writeUserConfig(t, xdg, "---\ntracker: "+other.dir+"\n---\n")
+	g.work.env["XDG_CONFIG_HOME"] = xdg
+	if code, out, errOut := g.work.run("ls"); code != 0 || out != "" {
+		t.Fatalf("ls: exit %d, %q, %q: want the empty tracker $XDG_CONFIG_HOME names", code, out, errOut)
+	}
+}
+
+// A relative -C is read from the current folder, which has a tracker of its own that -C must leave.
+func TestDirFlagRelativeLeavesCurrentTracker(t *testing.T) {
+	outer := newTracker(t)
+	if code, _, errOut := outer.run("new", "In the outer tracker"); code != 0 {
+		t.Fatalf("new: exit %d: %s", code, errOut)
+	}
+	inner := filepath.Join(outer.dir, "inner")
+	if err := os.Mkdir(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := outer.run("-C", "inner", "init"); code != 0 {
+		t.Fatalf("-C inner init: exit %d: %s", code, errOut)
+	}
+	if code, out, errOut := outer.run("-C", "inner", "ls"); code != 0 || out != "" {
+		t.Fatalf("-C inner ls: exit %d, %q, %q: want the empty inner tracker", code, out, errOut)
+	}
+}
+
+// Help wins over -C, as over any other argument, even when -C's folder is missing or not given.
+func TestDirFlagHelpWins(t *testing.T) {
+	g := newGlobalSetup(t)
+	missing := filepath.Join(g.work.dir, "missing")
+	for _, args := range [][]string{{"-C", missing, "ls", "--help"}, {"-C", "--help"}, {"-C", "-h"},
+		{"-C", missing, "help"}} {
+		if code, out, errOut := g.work.run(args...); code != 0 || !strings.HasPrefix(out, "Usage: ") {
+			t.Fatalf("%q: exit %d, %q, %q", args, code, out, errOut)
+		}
+	}
+}
+
+// -C as a flag's value is a usage error too, not a body or a tag.
+func TestDirFlagAsValue(t *testing.T) {
+	g := newGlobalSetup(t)
+	g.work.wantError(2, "usage", "new", "--body", "-C", g.global.dir)
+	g.work.wantError(2, "usage", "-C", g.global.dir, "new", "title", "--tag", "-C")
+}
+
+// A ".." after a link leaves the folder the link points to, as the file system reads it, in -C and in tracker:.
+func TestLinksResolvedBeforeDotDot(t *testing.T) {
+	g := newGlobalSetup(t)
+	target := newTracker(t) // the tracker the link's ".." names: target.dir holds .cairn and sub
+	sub := filepath.Join(target.dir, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(g.global.dir, "link") // g.global.dir/link -> target.dir/sub
+	if err := os.Symlink(sub, link); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errOut := g.work.run("-C", filepath.Join(g.global.dir, "link")+"/..", "ls"); code != 0 || out != "" {
+		t.Fatalf("-C link/..: exit %d, %q, %q: want target's empty tracker", code, out, errOut)
+	}
+	writeUserConfig(t, filepath.Join(g.home, ".config"), "---\ntracker: "+link+"/..\n---\n")
+	if code, out, errOut := g.work.run("ls"); code != 0 || out != "" {
+		t.Fatalf("tracker: link/..: exit %d, %q, %q: want target's empty tracker", code, out, errOut)
+	}
+}
+
+// A .cairn that cannot be checked is an error. It is never taken for a missing one, which would send writes to the
+// global tracker.
+func TestUncheckableCairnIsNotGlobal(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads any folder")
+	}
+	g := newGlobalSetup(t)
+	locked := filepath.Join(t.TempDir(), "locked")
+	if err := os.MkdirAll(filepath.Join(locked, ".cairn"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(locked, ".cairn"), filepath.Join(g.work.dir, ".cairn")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	g.work.wantError(1, "error", "new", "Must not reach the global tracker")
+	if code, out, _ := g.global.run("ls"); code != 0 || strings.Count(out, "\n") != 1 {
+		t.Fatalf("the global tracker changed: %q", out)
 	}
 }

@@ -67,7 +67,8 @@ type Store struct {
 // Find walks up from start, which must be an absolute path, and opens the first tracker it finds. In each folder it
 // looks first for a ".cairn" folder, then, when the folder is the top of a linked git worktree, for the main
 // checkout's ".cairn", which counts only when it is on its own branch (OwnBranch). It returns ErrNoTracker when it
-// reaches the root without finding one; a ".cairn" that is a file does not count.
+// reaches the root without finding one; a ".cairn" that is a file does not count. A ".cairn" that cannot be checked, as
+// when it is a link into a folder that cannot be read, is an error, not one more folder to walk past.
 //
 // It finds the main checkout as git lays it out, reading files and running no git: the worktree's ".git" file says
 // "gitdir: <path>", that folder's "commondir" file names the repository's git folder, and the main checkout is that
@@ -76,8 +77,13 @@ type Store struct {
 // repository, which has no main checkout) are no link, and the walk goes on up.
 func Find(start string) (*Store, error) {
 	for dir := start; ; dir = filepath.Dir(dir) {
-		if candidate := filepath.Join(dir, DirName); isDir(candidate) {
+		candidate := filepath.Join(dir, DirName)
+		fi, err := os.Stat(candidate)
+		if err == nil && fi.IsDir() {
 			return &Store{Dir: candidate}, nil
+		}
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
 		}
 		if s, ok := linkedTracker(dir); ok {
 			return s, nil
@@ -95,9 +101,9 @@ const UserConfigFile = "cairn/" + ConfigFile
 const trackerKey = "tracker"
 
 // Global opens the global tracker: the ".cairn" folder in the folder that the user config file at path names with its
-// tracker key. It returns ErrNoTracker when the file does not exist or has no tracker key, and ignores other keys. A
-// file that cannot be read or parsed, a tracker that is not one absolute path, and a folder with no ".cairn" folder
-// are errors that name the file.
+// tracker key, with its links resolved before any ".." in it. It returns ErrNoTracker when the file does not exist or
+// has no tracker key, and ignores other keys. A file that cannot be read or parsed, a tracker that is not one absolute
+// path, and a folder that cannot be found or has no ".cairn" folder are errors that name the file.
 func Global(path string) (*Store, error) {
 	fields, _, err := readDoc(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -114,8 +120,16 @@ func Global(path string) (*Store, error) {
 	if f.IsList || !filepath.IsAbs(f.Value) {
 		return nil, fileError(path, fmt.Errorf("%s must be an absolute path", trackerKey))
 	}
-	s := &Store{Dir: filepath.Join(f.Value, DirName)}
-	if !isDir(s.Dir) {
+	dir, err := filepath.EvalSymlinks(f.Value)
+	if err != nil {
+		return nil, fileError(path, fmt.Errorf("%s: %w", trackerKey, err))
+	}
+	s := &Store{Dir: filepath.Join(dir, DirName)}
+	fi, err := os.Stat(s.Dir)
+	switch {
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
+		return nil, fileError(path, fmt.Errorf("%s: %w", trackerKey, err))
+	case err != nil || !fi.IsDir():
 		return nil, fileError(path, fmt.Errorf("%s: no %s folder in %s", trackerKey, DirName, f.Value))
 	}
 	return s, nil
@@ -158,11 +172,6 @@ func pathIn(file, prefix, base string) (string, bool) {
 		p = filepath.Join(base, p)
 	}
 	return p, true
-}
-
-func isDir(p string) bool {
-	fi, err := os.Stat(p)
-	return err == nil && fi.IsDir()
 }
 
 // OwnBranch reports whether the tracker is on a branch of its own: its folder holds a ".git" of its own, so it is a

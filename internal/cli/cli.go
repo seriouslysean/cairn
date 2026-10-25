@@ -10,9 +10,10 @@
 // --retracted anywhere but show, --branches anywhere but ls and show, --own-branch anywhere but init, --closed
 // and --owed anywhere but ls, and --archived, --limit and --all anywhere but ls and search.
 //
-// Tracker: "-C <dir>" as the first two arguments runs the command as if Env.Dir were dir, joined to Env.Dir when it is
-// relative; a dir that is missing or not a folder is an "error", and a missing dir, or one that starts with "--", is a
-// usage error. A "-C" anywhere else before "--" is a usage error. Every command but init, help and version uses the
+// Tracker: "-C <dir>" as the first two arguments runs the command as if Env.Dir were dir, after Env.Dir when it is
+// relative, with its links resolved before any ".." in it; a dir that is missing or not a folder is an "error", and a
+// missing dir, or one that starts with "--", is a usage error. Help still wins, as above. A "-C" anywhere else before
+// "--", a flag's value included, is a usage error. Every command but init, help and version uses the
 // tracker that store.Find reaches from Env.Dir, else, without -C, the global tracker: store.Global of the user config
 // file, store.UserConfigFile in $XDG_CONFIG_HOME when it is an absolute path, else in $HOME/.config. When neither
 // names an absolute path, there is no global tracker.
@@ -333,13 +334,9 @@ type output struct {
 
 // Run runs one command and returns its exit code.
 func Run(args []string, env Env) int {
+	jsonOn := len(args) > 0 && scanJSON(args[1:])
 	c := &call{env: env}
-	rest, err := c.chdir(args)
-	if err != nil {
-		return c.fail(err, len(args) > 0 && scanJSON(args[1:]))
-	}
-	jsonOn := len(rest) > 0 && scanJSON(rest[1:])
-	out, err := c.dispatch(rest)
+	out, err := c.dispatch(args)
 	if err == nil {
 		err = c.print(out, jsonOn)
 	}
@@ -355,10 +352,11 @@ func Run(args []string, env Env) int {
 // dirFlag, before the command, runs it as if Cairn started in the folder it names.
 const dirFlag = "-C"
 
-// chdir reads a dirFlag at the start of args: it sets Env.Dir to its folder, joined to Env.Dir when it is relative,
-// and returns the arguments after it. The folder must exist.
+// chdir reads a dirFlag at the start of args: it sets Env.Dir to its folder, after Env.Dir when it is relative, with
+// its links resolved, so that ".." after a link leaves the folder the link points to. It returns the arguments after
+// it. The folder must exist.
 func (c *call) chdir(args []string) ([]string, error) {
-	if len(args) == 0 || args[0] != dirFlag {
+	if args[0] != dirFlag {
 		return args, nil
 	}
 	if len(args) < 2 || strings.HasPrefix(args[1], flagPrefix) {
@@ -366,7 +364,11 @@ func (c *call) chdir(args []string) ([]string, error) {
 	}
 	dir := args[1]
 	if !filepath.IsAbs(dir) {
-		dir = filepath.Join(c.env.Dir, dir)
+		dir = c.env.Dir + string(filepath.Separator) + dir
+	}
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", dirFlag, err)
 	}
 	fi, err := os.Stat(dir)
 	if err != nil {
@@ -434,8 +436,18 @@ func (c *call) dispatch(args []string) (output, error) {
 	if len(args) == 0 {
 		return output{}, usageError("no command given (run `cairn help`)")
 	}
-	if wantsHelp(args) {
+	if wantsHelp(args) || len(args) > 2 && args[0] == dirFlag && args[2] == helpCommand {
 		return runHelp(c)
+	}
+	args, err := c.chdir(args)
+	if err != nil {
+		return output{}, err
+	}
+	if len(args) == 0 {
+		return output{}, usageError("no command given (run `cairn help`)")
+	}
+	if slices.Contains(beforeEnd(args), dirFlag) {
+		return output{}, usageError(dirFlag + " goes before the command")
 	}
 	name, args := args[0], args[1:]
 	if name == milestoneCommand {
@@ -456,6 +468,14 @@ func (c *call) dispatch(args []string) (output, error) {
 		return output{}, usageError(fmt.Sprintf("unknown command %q", name))
 	}
 	return c.exec(name, cmd, args)
+}
+
+// beforeEnd is args up to the first "--".
+func beforeEnd(args []string) []string {
+	if i := slices.Index(args, endOfFlags); i >= 0 {
+		return args[:i]
+	}
+	return args
 }
 
 // wantsHelp reports whether args asks for help, as the package doc describes.
@@ -511,9 +531,6 @@ func (c *call) parse(args, allowed []string) error {
 			break
 		}
 		name, ok := strings.CutPrefix(a, flagPrefix)
-		if !ok && a == dirFlag {
-			return usageError(dirFlag + " goes before the command")
-		}
 		if !ok {
 			c.args = append(c.args, a)
 			continue

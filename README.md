@@ -52,7 +52,7 @@ tracker: /home/test-agent/notes
 ```
 
 Outside any `.cairn`, every command but `init` then uses `/home/test-agent/notes/.cairn`. `cairn -C <dir> <command>` runs as
-if started in `<dir>`. See "Where Cairn finds its tracker" in [docs/spec.md](docs/spec.md).
+if started in `<dir>`, and never falls back to the global tracker. See "Where Cairn finds its tracker" in [docs/spec.md](docs/spec.md).
 
 ## For agents
 

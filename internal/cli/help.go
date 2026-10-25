@@ -14,9 +14,9 @@ func runHelp(*call) (output, error) {
 	const indent = "\n  "
 	text := "Usage: cairn [" + dirFlag + " <dir>] <command> [args]\n" +
 		"Cairn uses the .cairn here or in a folder above. Outside one, it uses the global tracker: the .cairn in the " +
-		"folder that tracker: names in $" + configHomeEnv + "/" + store.UserConfigFile + ", else ~/" + configInHome +
-		"/" + store.UserConfigFile + ". " + dirFlag + " <dir> runs as if started in <dir>, and never uses the global " +
-		"tracker.\n" +
+		"folder named by the line \"tracker: <absolute path>\", between two \"---\" lines, in $" + configHomeEnv + "/" +
+		store.UserConfigFile + ", else ~/" + configInHome + "/" + store.UserConfigFile + ". " + dirFlag +
+		" <dir> runs as if started in <dir>, and never uses the global tracker.\n" +
 		`Every command takes --json: success prints {"ok": true, "data": …}, plus "warnings" when there are any and ` +
 		`"total" on ls and search; failure prints {"ok": false, "error": {"code": "…", "message": "…"}}.` + "\n" +
 		"Writes take --as (or " + actorEnv + "), --persona and --model.\n\n" +

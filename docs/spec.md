@@ -1,7 +1,8 @@
 # Cairn v0 spec
 
 Cairn is an issue tracker for coding agents first and people second. Issues live as markdown files in a `.cairn/`
-folder inside the repository they belong to, committed with the code or on a branch of their own (below). One `cairn`
+folder inside the repository they belong to, committed with the code or on a branch of their own (below), or in one
+global tracker for work outside any repository's tracker. One `cairn`
 command, installed once per machine, reads and writes them. An agent can do everything without a person: no prompts,
 no editor, JSON on request.
 
@@ -28,15 +29,18 @@ no editor, JSON on request.
 
 ## Where Cairn finds its tracker
 1. `cairn -C <dir> <command> …` runs as if Cairn started in `<dir>`, which is read from the current folder when it is
-   relative, and never uses the global tracker. `-C` is read only before the command; after it, it is a usage error.
+   relative, and never uses the global tracker. Links in `<dir>` are resolved before any `..` in it, as `cd` would.
+   `-C` is read only before the command; anywhere after it, a flag's value included, it is a usage error. `--help`
+   and `-h` still win.
 2. Otherwise, the first `.cairn` found walking up from the current folder, as "A branch of its own" says for linked
-   worktrees: a repository's own tracker always wins.
+   worktrees: a repository's own tracker always wins. A `.cairn` that cannot be checked, as when it is a link into a
+   folder that cannot be read, is an error, never a reason to go on to the global tracker.
 3. Otherwise, the global tracker: the `.cairn` in the folder that the user config file names with its `tracker` key.
 4. Otherwise, the `no_tracker` error.
 
 The user config file is `$XDG_CONFIG_HOME/cairn/config.yml` when `XDG_CONFIG_HOME` is an absolute path, else
 `$HOME/.config/cairn/config.yml`, as `gh` finds its own (`gh help environment`). It has the same frontmatter as a
-tracker's `config.yml`, and Cairn reads only its `tracker` key, an absolute path:
+tracker's `config.yml`, and Cairn reads only its `tracker` key, an absolute path, with links resolved as for `-C`:
 
 ```
 ---
@@ -46,8 +50,8 @@ tracker: /home/test-agent/notes
 
 - With no user config file, or one with no `tracker` key, there is no global tracker.
 - Cairn reads the file only when step 3 is reached, so a wrong one never stops a repository's own tracker. A file
-  that cannot be read or parsed, a `tracker` that is not an absolute path, and a folder with no `.cairn` folder are
-  then an error (exit 1) that names the file.
+  that cannot be read or parsed, a `tracker` that is not an absolute path, and a folder that cannot be found or has no
+  `.cairn` folder are then an error (exit 1) that names the file.
 - `cairn init` makes `.cairn` in the folder it runs in, or in `-C <dir>`, and never looks at the global tracker.
 - Not yet: an environment variable that overrides the user config file.
 
