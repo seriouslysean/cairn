@@ -10,6 +10,14 @@
 // --retracted anywhere but show, --branches anywhere but ls and show, --own-branch anywhere but init, --closed
 // and --owed anywhere but ls, and --archived, --limit and --all anywhere but ls and search.
 //
+// Tracker: "-C <dir>" as the first two arguments runs the command as if Env.Dir were dir, after Env.Dir when it is
+// relative, with its links resolved before any ".." in it; a dir that is missing or not a folder is an "error", and a
+// missing dir, or one that starts with "--", is a usage error. Help still wins, as above. A "-C" anywhere else before
+// "--", a flag's value included, is a usage error. Every command but init, help and version uses the
+// tracker that store.Find reaches from Env.Dir, else, without -C, the global tracker: store.Global of the user config
+// file, store.UserConfigFile in $XDG_CONFIG_HOME when it is an absolute path, else in $HOME/.config. When neither
+// names an absolute path, there is no global tracker.
+//
 // Output: --json anywhere before "--" turns on JSON, even when the other arguments are wrong. With --json, success
 // prints {"ok": true, "data": …} and failure prints
 // {"ok": false, "error": {"code": "…", "message": "…"}} on stdout, plus the message on one line of stderr. Without
@@ -22,7 +30,7 @@
 //
 // Exit codes and error codes:
 //   - 0: ok.
-//   - 1: "no_tracker" (no .cairn here or above), "exists" (init where .cairn exists or another tracker would be
+//   - 1: "no_tracker" (no .cairn here or above, and no global tracker), "exists" (init where .cairn exists or another tracker would be
 //     hidden, or milestone new for an id that has a file), "error" (anything else).
 //   - 2: "usage": an unknown command or flag, a missing or extra argument, a missing value, or a value in the wrong
 //     form, including a bad date, a status not in the config, a tag whose group is not in the config, and a write
@@ -171,6 +179,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -307,6 +317,7 @@ var aliases = map[string]string{"--version": "version"}
 // call is one run of a command: its environment, its parsed arguments, what it wrote, and the warnings it gives.
 type call struct {
 	env      Env
+	dirGiven bool                // dirFlag was given
 	args     []string            // the positional arguments
 	values   map[string][]string // each value flag's values, in the order given
 	switches map[string]bool     // the switches given
@@ -338,6 +349,76 @@ func Run(args []string, env Env) int {
 	return ExitOK
 }
 
+// dirFlag, before the command, runs it as if Cairn started in the folder it names.
+const dirFlag = "-C"
+
+// chdir reads a dirFlag at the start of args: it sets Env.Dir to its folder, after Env.Dir when it is relative, with
+// its links resolved, so that ".." after a link leaves the folder the link points to. It returns the arguments after
+// it. The folder must exist.
+func (c *call) chdir(args []string) ([]string, error) {
+	if args[0] != dirFlag {
+		return args, nil
+	}
+	if len(args) < 2 || strings.HasPrefix(args[1], flagPrefix) {
+		return nil, usageError(dirFlag + " needs a folder")
+	}
+	dir := args[1]
+	if !filepath.IsAbs(dir) {
+		dir = c.env.Dir + string(filepath.Separator) + dir
+	}
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", dirFlag, err)
+	}
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", dirFlag, err)
+	}
+	if !fi.IsDir() {
+		return nil, fmt.Errorf("%s: %s is not a folder", dirFlag, dir)
+	}
+	c.env.Dir, c.dirGiven = dir, true
+	return args[2:], nil
+}
+
+// The user's config folder, as gh and the XDG Base Directory spec find it: $XDG_CONFIG_HOME when it is an absolute
+// path, else $HOME/.config.
+const (
+	configHomeEnv = "XDG_CONFIG_HOME"
+	homeEnv       = "HOME"
+	configInHome  = ".config"
+)
+
+// openStore opens the tracker a command uses: the one store.Find reaches from Env.Dir, else, unless dirFlag was
+// given, the global tracker that the user config file names (store.Global).
+func (c *call) openStore() (*store.Store, error) {
+	s, err := store.Find(c.env.Dir)
+	if !errors.Is(err, store.ErrNoTracker) || c.dirGiven {
+		return s, err
+	}
+	p := c.userConfigFile()
+	if p == "" {
+		return nil, err
+	}
+	return store.Global(p)
+}
+
+// userConfigFile is the user config file's path, or "" when the environment names no config folder.
+func (c *call) userConfigFile() string {
+	if c.env.Getenv == nil {
+		return ""
+	}
+	dir := c.env.Getenv(configHomeEnv)
+	if !filepath.IsAbs(dir) {
+		home := c.env.Getenv(homeEnv)
+		if !filepath.IsAbs(home) {
+			return ""
+		}
+		dir = filepath.Join(home, configInHome)
+	}
+	return filepath.Join(dir, store.UserConfigFile)
+}
+
 // scanJSON reports whether args holds a standalone "--json" before any "--".
 func scanJSON(args []string) bool {
 	for _, a := range args {
@@ -355,8 +436,18 @@ func (c *call) dispatch(args []string) (output, error) {
 	if len(args) == 0 {
 		return output{}, usageError("no command given (run `cairn help`)")
 	}
-	if wantsHelp(args) {
+	if wantsHelp(args) || len(args) > 2 && args[0] == dirFlag && args[2] == helpCommand {
 		return runHelp(c)
+	}
+	args, err := c.chdir(args)
+	if err != nil {
+		return output{}, err
+	}
+	if len(args) == 0 {
+		return output{}, usageError("no command given (run `cairn help`)")
+	}
+	if slices.Contains(beforeEnd(args), dirFlag) {
+		return output{}, usageError(dirFlag + " goes before the command")
 	}
 	name, args := args[0], args[1:]
 	if name == milestoneCommand {
@@ -377,6 +468,14 @@ func (c *call) dispatch(args []string) (output, error) {
 		return output{}, usageError(fmt.Sprintf("unknown command %q", name))
 	}
 	return c.exec(name, cmd, args)
+}
+
+// beforeEnd is args up to the first "--".
+func beforeEnd(args []string) []string {
+	if i := slices.Index(args, endOfFlags); i >= 0 {
+		return args[:i]
+	}
+	return args
 }
 
 // wantsHelp reports whether args asks for help, as the package doc describes.

@@ -30,7 +30,7 @@ func runComment(c *call) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
-	s, err := store.Find(c.env.Dir)
+	s, err := c.openStore()
 	if err != nil {
 		return output{}, err
 	}
@@ -87,7 +87,7 @@ func runRetract(c *call) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
-	s, err := store.Find(c.env.Dir)
+	s, err := c.openStore()
 	if err != nil {
 		return output{}, err
 	}
@@ -122,7 +122,7 @@ func runPurge(c *call) (output, error) {
 	if _, err := c.actor(); err != nil {
 		return output{}, err
 	}
-	s, err := store.Find(c.env.Dir)
+	s, err := c.openStore()
 	if err != nil {
 		return output{}, err
 	}

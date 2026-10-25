@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/seriouslysean/cairn/internal/model"
-	"github.com/seriouslysean/cairn/internal/store"
 	"github.com/seriouslysean/cairn/internal/words"
 )
 
@@ -60,7 +59,7 @@ func runLs(c *call) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
-	s, err := store.Find(c.env.Dir)
+	s, err := c.openStore()
 	if err != nil {
 		return output{}, err
 	}
@@ -136,7 +135,7 @@ func runLs(c *call) (output, error) {
 }
 
 func runTags(c *call) (output, error) {
-	s, err := store.Find(c.env.Dir)
+	s, err := c.openStore()
 	if err != nil {
 		return output{}, err
 	}
@@ -168,7 +167,7 @@ func runSearch(c *call) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
-	s, err := store.Find(c.env.Dir)
+	s, err := c.openStore()
 	if err != nil {
 		return output{}, err
 	}
