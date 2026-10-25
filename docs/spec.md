@@ -26,6 +26,31 @@ no editor, JSON on request.
   `.cairn-tmp-*`, so git never sees one, and commit on write never commits another writer's half-written file. A
   tracker made before that line existed gets it by hand: add `.cairn-tmp-*` to `.cairn/.gitignore`.
 
+## Where Cairn finds its tracker
+1. `cairn -C <dir> <command> …` runs as if Cairn started in `<dir>`, which is read from the current folder when it is
+   relative, and never uses the global tracker. `-C` is read only before the command; after it, it is a usage error.
+2. Otherwise, the first `.cairn` found walking up from the current folder, as "A branch of its own" says for linked
+   worktrees: a repository's own tracker always wins.
+3. Otherwise, the global tracker: the `.cairn` in the folder that the user config file names with its `tracker` key.
+4. Otherwise, the `no_tracker` error.
+
+The user config file is `$XDG_CONFIG_HOME/cairn/config.yml` when `XDG_CONFIG_HOME` is an absolute path, else
+`$HOME/.config/cairn/config.yml`, as `gh` finds its own (`gh help environment`). It has the same frontmatter as a
+tracker's `config.yml`, and Cairn reads only its `tracker` key, an absolute path:
+
+```
+---
+tracker: /home/test-agent/notes
+---
+```
+
+- With no user config file, or one with no `tracker` key, there is no global tracker.
+- Cairn reads the file only when step 3 is reached, so a wrong one never stops a repository's own tracker. A file
+  that cannot be read or parsed, a `tracker` that is not an absolute path, and a folder with no `.cairn` folder are
+  then an error (exit 1) that names the file.
+- `cairn init` makes `.cairn` in the folder it runs in, or in `-C <dir>`, and never looks at the global tracker.
+- Not yet: an environment variable that overrides the user config file.
+
 ### Issue
 ```
 ---

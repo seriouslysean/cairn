@@ -38,7 +38,7 @@ func runNew(c *call) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
-	s, err := store.Find(c.env.Dir)
+	s, err := c.openStore()
 	if err != nil {
 		return output{}, err
 	}
@@ -100,7 +100,7 @@ func runEdit(c *call) (output, error) {
 	if _, err := c.actor(); err != nil {
 		return output{}, err
 	}
-	s, err := store.Find(c.env.Dir)
+	s, err := c.openStore()
 	if err != nil {
 		return output{}, err
 	}
@@ -163,7 +163,7 @@ func runRm(c *call) (output, error) {
 	if _, err := c.actor(); err != nil {
 		return output{}, err
 	}
-	s, err := store.Find(c.env.Dir)
+	s, err := c.openStore()
 	if err != nil {
 		return output{}, err
 	}
@@ -176,7 +176,7 @@ func runRm(c *call) (output, error) {
 
 func runShow(c *call) (output, error) {
 	issueID := c.args[0]
-	s, err := store.Find(c.env.Dir)
+	s, err := c.openStore()
 	if err != nil {
 		return output{}, err
 	}

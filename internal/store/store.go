@@ -88,6 +88,39 @@ func Find(start string) (*Store, error) {
 	}
 }
 
+// UserConfigFile is the user config file's path in the user's config folder.
+const UserConfigFile = "cairn/" + ConfigFile
+
+// trackerKey is the user config file's key that names the global tracker's folder.
+const trackerKey = "tracker"
+
+// Global opens the global tracker: the ".cairn" folder in the folder that the user config file at path names with its
+// tracker key. It returns ErrNoTracker when the file does not exist or has no tracker key, and ignores other keys. A
+// file that cannot be read or parsed, a tracker that is not one absolute path, and a folder with no ".cairn" folder
+// are errors that name the file.
+func Global(path string) (*Store, error) {
+	fields, _, err := readDoc(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, ErrNoTracker
+	}
+	if err != nil {
+		return nil, err
+	}
+	i := slices.IndexFunc(fields, func(f doc.Field) bool { return f.Key == trackerKey })
+	if i < 0 {
+		return nil, ErrNoTracker
+	}
+	f := fields[i]
+	if f.IsList || !filepath.IsAbs(f.Value) {
+		return nil, fileError(path, fmt.Errorf("%s must be an absolute path", trackerKey))
+	}
+	s := &Store{Dir: filepath.Join(f.Value, DirName)}
+	if !isDir(s.Dir) {
+		return nil, fileError(path, fmt.Errorf("%s: no %s folder in %s", trackerKey, DirName, f.Value))
+	}
+	return s, nil
+}
+
 // What a linked worktree's files are called and say, as git lays them out.
 const (
 	gitName       = ".git"     // a checkout's git folder, a linked worktree's file, and the main repository's git folder

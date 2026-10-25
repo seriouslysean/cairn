@@ -11,7 +11,7 @@ import (
 )
 
 func runMilestones(c *call) (output, error) {
-	s, err := store.Find(c.env.Dir)
+	s, err := c.openStore()
 	if err != nil {
 		return output{}, err
 	}
@@ -76,7 +76,7 @@ func runMilestoneNew(c *call) (output, error) {
 	if _, err := c.actor(); err != nil {
 		return output{}, err
 	}
-	s, err := store.Find(c.env.Dir)
+	s, err := c.openStore()
 	if err != nil {
 		return output{}, err
 	}
@@ -118,7 +118,7 @@ func runMilestoneEdit(c *call) (output, error) {
 	if _, err := c.actor(); err != nil {
 		return output{}, err
 	}
-	s, err := store.Find(c.env.Dir)
+	s, err := c.openStore()
 	if err != nil {
 		return output{}, err
 	}

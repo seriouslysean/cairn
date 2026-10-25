@@ -42,6 +42,18 @@ git -C .cairn push         # shares the writes; git -C .cairn pull brings in oth
 Every worktree of the repository then uses that one tracker. See "A branch of its own" in
 [docs/spec.md](docs/spec.md).
 
+An agent working in a folder with no tracker of its own can use one tracker for the whole machine. Name its folder
+once, in `~/.config/cairn/config.yml` (or `$XDG_CONFIG_HOME/cairn/config.yml`):
+
+```
+---
+tracker: /home/test-agent/notes
+---
+```
+
+Outside any `.cairn`, every command but `init` then uses `/home/test-agent/notes/.cairn`. `cairn -C <dir> <command>` runs as
+if started in `<dir>`. See "Where Cairn finds its tracker" in [docs/spec.md](docs/spec.md).
+
 ## For agents
 
 Put this in your repository's AGENTS.md:
