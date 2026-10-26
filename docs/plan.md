@@ -310,12 +310,41 @@ Read-only context:
 - internal/cli/owed_test.go
 - internal/cli/help_test.go
 
+## Step 14: board
+`board` and `board --html <file>` show one tracker as columns, one per status in the config's order, for a person to look
+at while agents keep using the CLI. It was the fourth of the "Later" steps and comes first because the owner asked for
+it, and only one tracker exists to show.
+- `board` prints a section per status, with a header that counts its issues and a line per issue: id, title, tags and
+  last update. A closed or archived status is collapsed and prints only its count.
+- `board --html <file>` writes one page. The page is a fixed template compiled in with `embed` and filled by
+  `html/template`, so a run changes data and never code. Every column is a `<details>` element, shut for a collapsed
+  status, so it needs no script. A Content-Security-Policy meta tag allows inline CSS and nothing else.
+- `internal/board` lays the columns out and renders both forms. `internal/cli/board.go` is the command.
+- Not built: `board [dir...]` over several trackers and `serve`, which wait for a second tracker; grouping by project;
+  a cap on terminal rows, which `ls` has because `pull` will bring issues by the hundred.
+
+The contract is the package comment in `internal/cli/cli.go` and the doc comments of `internal/board`.
+
+Drafter edits:
+- internal/board/board.go
+- internal/board/page.go
+- internal/board/page.html
+- internal/cli/board.go
+- internal/cli/cli.go
+- internal/cli/help.go
+- internal/cli/json.go
+
+Read-only context:
+- docs/spec.md
+- internal/board/board_test.go
+- internal/cli/board_test.go
+- internal/cli/help_test.go
+
 ## Later, in this order
 1. `pull`, one way: GitHub issues and their comments become Cairn issues and comments.
 2. `push`.
 3. Meaning search (`.index/`).
-4. `board` and `board --html`.
-5. Release: CI, tagged builds, a Homebrew tap.
+4. Release: CI, tagged builds, a Homebrew tap.
 
 Not planned: duplicate checks. The spec had `dupes` and a check before `new` (exit code 3, `--force`); word overlap
 could not tell a duplicate from a template title, so both wait in the backlog as #15 and #16.

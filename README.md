@@ -73,6 +73,13 @@ approved and not yet done. `search` leaves archived issues out unless given `--a
 most 30 rows, with a warning when they leave some out: narrow with a filter or a better query, or pass `--limit N` or
 `--all`. [docs/spec.md](docs/spec.md) has the rest.
 
+## For people
+
+`cairn board` prints the tracker as one section per status, in the order of the config's `statuses`. Closed and
+archived statuses are collapsed to a count. `cairn board --html board.html` writes the same board as one page that
+loads nothing and runs no script, so it opens from a file. The page's code is fixed in the binary and the command only
+fills in the data: to refresh it, run the command again.
+
 ## Requests
 
 Open an issue at https://github.com/seriouslysean/cairn/issues and say what you were trying to do.

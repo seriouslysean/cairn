@@ -8,7 +8,8 @@
 // any arguments, and "--help" or "-h" anywhere before "--" (even as a flag's value, and after any command), run help.
 // "--version" means version. search --meaning, which a later step builds, is a usage error until then. So are
 // --retracted anywhere but show, --branches anywhere but ls and show, --own-branch anywhere but init, --closed
-// and --owed anywhere but ls, and --archived, --limit and --all anywhere but ls and search.
+// and --owed anywhere but ls, --archived, --limit and --all anywhere but ls and search, and --html, which takes a
+// value, anywhere but board.
 //
 // Tracker: "-C <dir>" as the first two arguments runs the command as if Env.Dir were dir, after Env.Dir when it is
 // relative, with its links resolved before any ".." in it; a dir that is missing or not a folder is an "error", and a
@@ -146,6 +147,20 @@
 //     with at least one match are listed by matches, most first, then in store order. Text: one
 //     "<id>\t<matches>\t<title>\n" line each. Data: a list of issues without "body", each with "matches" added (an
 //     empty list, never null, when nothing matches).
+//   - board [--html <file>]: the issues in a column for each status, as internal/board lays them out: the config's
+//     statuses in its order, empty ones too, then any other status an issue has, in byte order. A column holds its
+//     issues with the last update first, and is collapsed when the config's closed or archived names its status.
+//     It takes no positional argument and only reads: it needs no actor and commits nothing. Without --html, text is
+//     board.Text: a header "<status> (<count>)" per column, with ", collapsed" after the count for a collapsed one,
+//     and a tab, then the id, title, tags joined by ", " and last update, separated by tabs, for each issue of a
+//     column that is not collapsed; blank lines separate columns. Data: {"columns": [{"status", "collapsed",
+//     "count", "issues"}, …]}, where issues are rows as ls gives them and are [] for a collapsed column, whatever its
+//     count. With --html, it writes the page board.HTML makes, every column's issues included, to the file, replacing
+//     it through store.WriteFileAtomic with mode 0644: a relative name is relative to Env.Dir, the folder must
+//     exist, and an empty name is a usage error. The page is one fixed template filled with data; it loads and runs
+//     nothing. Its title names the tracker by the name of the folder that holds the .cairn, and it says when Env.Now
+//     made it. Text: "wrote <the file>\n". Data: {"file": its path, made absolute as above, "issues": how many
+//     issues the page holds}. Neither has "total".
 //   - --limit N and --all, on ls and search, cap the rows they print. Without either, they print at most
 //     defaultLimit (30) rows; with --limit, at most N, which must be a whole number of 1 or more as strconv.Atoi
 //     reads it; with --all, every row. Any other N, and --limit with --all, is a usage error. The cut comes after the
@@ -243,6 +258,7 @@ const (
 	flagClosed      = "closed"
 	flagArchived    = "archived"
 	flagOwed        = "owed"
+	flagHTML        = "html"
 )
 
 const (
@@ -302,6 +318,7 @@ var commands = map[string]command{
 	"milestones": {argsErr: "milestones takes no positional arguments", run: runMilestones},
 	"search": {flags: []string{flagArchived, flagLimit, flagAll},
 		args: oneOrMore, argsErr: "search requires at least one word", run: runSearch},
+	"board": {flags: []string{flagHTML}, argsErr: "board takes no positional arguments", run: runBoard},
 }
 
 var milestoneCommands = map[string]command{

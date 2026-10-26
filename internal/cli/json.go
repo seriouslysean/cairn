@@ -87,6 +87,26 @@ type searchJSON struct {
 	Matches int `json:"matches"`
 }
 
+// boardJSON is the data of board: a column for each status, in the board's order.
+type boardJSON struct {
+	Columns []boardColumnJSON `json:"columns"`
+}
+
+// boardColumnJSON is a column of the board. Count is how many issues the status has. Issues lists them, but is empty
+// for a collapsed column, as the text leaves out its cards.
+type boardColumnJSON struct {
+	Status    string             `json:"status"`
+	Collapsed bool               `json:"collapsed"`
+	Count     int                `json:"count"`
+	Issues    []issueSummaryJSON `json:"issues"`
+}
+
+// boardFileJSON is the data of board --html: the page's path and how many issues it holds.
+type boardFileJSON struct {
+	File   string `json:"file"`
+	Issues int    `json:"issues"`
+}
+
 type commentJSON struct {
 	ID        string          `json:"id"`
 	Kind      string          `json:"kind"`
