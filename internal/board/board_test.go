@@ -63,6 +63,16 @@ func TestColumnsFollowConfig(t *testing.T) {
 	}
 }
 
+// A status that the config lists twice is one column.
+func TestDuplicateStatusIsOneColumn(t *testing.T) {
+	cfg := model.DefaultConfig()
+	cfg.Statuses = []string{"backlog", "open", "backlog", "done", "open"}
+	want := []shape{{"backlog", false, []string{"0001"}}, {"open", false, nil}, {"done", true, nil}}
+	if got := shapeOf(New(cfg, []model.Issue{issue("0001", "one", "backlog", 0)})); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got  %+v\nwant %+v", got, want)
+	}
+}
+
 // Which columns are collapsed comes from the config's closed and archived lists, not from the name "done".
 func TestCollapsedComesFromConfig(t *testing.T) {
 	cfg := model.DefaultConfig()
@@ -128,9 +138,9 @@ func TestEmptyBoard(t *testing.T) {
 	}
 }
 
-// Text has a header per column, "<status> (<count>)", and under it one line per card: id, title, tags and the last
-// update, separated by tabs. A collapsed column prints its count and the word collapsed, and no cards. Columns are
-// separated by a blank line.
+// Text has a header per column, "<status> (<count>)", and under it one line per card: id, last update, tags and
+// title, separated by tabs, the title last as in ls. A collapsed column prints its count and the word collapsed, and
+// no cards. Columns are separated by a blank line.
 func TestText(t *testing.T) {
 	issues := []model.Issue{
 		issue("0001", "Export drops the last row", "backlog", time.Minute, "area:export", "severity:high"),
@@ -140,11 +150,11 @@ func TestText(t *testing.T) {
 		issue("0005", "Another done thing", "done", 2*time.Hour),
 	}
 	want := "backlog (2)\n" +
-		"\t0002\tDocs\t\t2026-10-18T09:32:00.000Z\n" +
-		"\t0001\tExport drops the last row\tarea:export, severity:high\t2026-10-18T09:31:00.000Z\n" +
+		"\t0002\t2026-10-18T09:32:00.000Z\t\tDocs\n" +
+		"\t0001\t2026-10-18T09:31:00.000Z\tarea:export, severity:high\tExport drops the last row\n" +
 		"\n" +
 		"open (1)\n" +
-		"\t0003\tParser\tarea:parser\t2026-10-18T10:30:00.000Z\n" +
+		"\t0003\t2026-10-18T10:30:00.000Z\tarea:parser\tParser\n" +
 		"\n" +
 		"in-progress (0)\n" +
 		"\n" +

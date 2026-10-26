@@ -29,11 +29,11 @@ func boardTracker(t *testing.T) (*tracker, []string) {
 func TestBoardText(t *testing.T) {
 	tr, ids := boardTracker(t)
 	want := "backlog (2)\n" +
-		"\t" + ids[3] + "\tissue 4\tarea:export\t2026-10-18T12:30:00.123Z\n" +
-		"\t" + ids[0] + "\tissue 1\t\t2026-10-18T09:30:01.123Z\n" +
+		"\t" + ids[3] + "\t2026-10-18T12:30:00.123Z\tarea:export\tissue 4\n" +
+		"\t" + ids[0] + "\t2026-10-18T09:30:01.123Z\t\tissue 1\n" +
 		"\n" +
 		"open (1)\n" +
-		"\t" + ids[1] + "\tissue 2\t\t2026-10-18T10:30:00.123Z\n" +
+		"\t" + ids[1] + "\t2026-10-18T10:30:00.123Z\t\tissue 2\n" +
 		"\n" +
 		"in-progress (0)\n" +
 		"\n" +
@@ -101,19 +101,27 @@ func TestBoardStatusLeftOutOfConfig(t *testing.T) {
 	}
 }
 
-// board only reads: it asks for no actor and commits nothing.
+// board only reads: it asks for no actor and, with commit on write, commits nothing and leaves nothing for git to see
+// in the tracker.
 func TestBoardReadsOnly(t *testing.T) {
-	tr, _ := boardTracker(t)
+	tr := commitTracker(t, "")
+	tr.write("new", "first")
+	tr.write("new", "second")
 	delete(tr.env, "CAIRN_ACTOR")
-	before := snapshot(t, tr.dir)
-	for _, args := range [][]string{{"board"}, {"board", "--html", "board.html"}} {
-		if code, _, errOut := tr.run(args...); code != 0 {
+	head, files := tr.headCommit(), snapshot(t, filepath.Join(tr.dir, ".cairn"))
+	for _, args := range [][]string{{"board"}, {"board", "--json"}, {"board", "--html", "board.html"}} {
+		if code, _, errOut := tr.run(args...); code != 0 || errOut != "" {
 			t.Fatalf("%q: exit %d: %s", args, code, errOut)
 		}
 	}
-	os.Remove(filepath.Join(tr.dir, "board.html"))
-	if after := snapshot(t, tr.dir); !reflect.DeepEqual(after, before) {
-		t.Fatalf("the tracker changed\nbefore %v\nafter  %v", before, after)
+	if got := tr.headCommit(); got != head {
+		t.Errorf("HEAD moved from %s to %s", head, got)
+	}
+	if got := snapshot(t, filepath.Join(tr.dir, ".cairn")); !reflect.DeepEqual(got, files) {
+		t.Errorf("the tracker's files changed\nbefore %v\nafter  %v", files, got)
+	}
+	if got, want := tr.status(), []string{"?? board.html"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("git status %q, want only the page, %q", got, want)
 	}
 }
 
@@ -222,12 +230,36 @@ func TestBoardUsageErrors(t *testing.T) {
 	}
 }
 
-// A file that cannot be written is an error, and nothing is left behind.
+// A file that cannot be written is an error, and nothing is left behind: not for a folder that is missing, and not for
+// a name that is a folder, which the message says.
 func TestBoardHTMLCannotWrite(t *testing.T) {
 	tr, _ := boardTracker(t)
 	tr.wantError(1, "error", "board", "--html", filepath.Join("no", "such", "folder", "board.html"))
 	if entries, _ := os.ReadDir(tr.dir); len(entries) != 1 {
 		t.Errorf("folder holds %d entries, want only .cairn", len(entries))
+	}
+
+	if err := os.Mkdir(filepath.Join(tr.dir, "page"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"page", "page" + string(filepath.Separator)} {
+		code, out, errOut := tr.run("board", "--html", name)
+		if code != 1 || out != "" || !strings.Contains(errOut, "page"+strings.TrimPrefix(name, "page")+" is a folder") {
+			t.Errorf("--html %q: exit %d, stdout %q, stderr %q", name, code, out, errOut)
+		}
+	}
+	if entries, _ := os.ReadDir(tr.dir); len(entries) != 2 {
+		t.Errorf("folder holds %d entries, want .cairn and page", len(entries))
+	}
+}
+
+// A tab in a title shifts no field before it: the title is last, as in ls.
+func TestBoardTextTabInTitle(t *testing.T) {
+	tr := newTracker(t)
+	id := tr.issue("new", "one\ttwo", "--tag", "area:export").ID
+	_, out, _ := tr.run("board")
+	if want := "\t" + id + "\t2026-10-18T09:30:00.123Z\tarea:export\tone\ttwo\n"; !strings.Contains(out, want) {
+		t.Fatalf("got %q, want it to contain %q", out, want)
 	}
 }
 

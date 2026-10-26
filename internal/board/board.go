@@ -62,7 +62,8 @@ func (b Board) Total() int {
 
 // Text is the board for a terminal. Each column has a header, "<status> (<count>)", with ", collapsed" after the
 // count for a collapsed one, and under it one line for each card of a column that is not collapsed: a tab, then the
-// id, title, tags (joined by ", ") and time of the last update, separated by tabs. A blank line separates columns.
+// id, time of the last update, tags (joined by ", ") and title, separated by tabs. The title is last, as in ls, so a
+// tab in a title shifts no other field. A blank line separates columns.
 func (b Board) Text() string {
 	var text strings.Builder
 	for n, c := range b.Columns {
@@ -75,7 +76,7 @@ func (b Board) Text() string {
 		}
 		fmt.Fprintf(&text, "%s (%d)\n", c.Status, len(c.Issues))
 		for _, i := range c.Issues {
-			fmt.Fprintf(&text, "\t%s\t%s\t%s\t%s\n", i.ID, i.Title, strings.Join(i.Tags, ", "), model.FormatTime(i.Updated))
+			fmt.Fprintf(&text, "\t%s\t%s\t%s\t%s\n", i.ID, model.FormatTime(i.Updated), strings.Join(i.Tags, ", "), i.Title)
 		}
 	}
 	return text.String()

@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/seriouslysean/cairn/internal/board"
@@ -37,7 +39,11 @@ func runBoard(c *call) (output, error) {
 		return output{}, err
 	}
 	if !filepath.IsAbs(file) {
-		file = filepath.Join(c.env.Dir, file)
+		// Not filepath.Join: it would drop a ".." that follows a link, as -C's reading of its folder does not.
+		file = c.env.Dir + string(filepath.Separator) + file
+	}
+	if fi, err := os.Stat(file); err == nil && fi.IsDir() {
+		return output{}, fmt.Errorf("%s is a folder, not a file", file)
 	}
 	if err := store.WriteFileAtomic(file, page, pagePerm); err != nil {
 		return output{}, err

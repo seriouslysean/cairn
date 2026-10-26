@@ -152,12 +152,12 @@
 //     issues with the last update first, and is collapsed when the config's closed or archived names its status.
 //     It takes no positional argument and only reads: it needs no actor and commits nothing. Without --html, text is
 //     board.Text: a header "<status> (<count>)" per column, with ", collapsed" after the count for a collapsed one,
-//     and a tab, then the id, title, tags joined by ", " and last update, separated by tabs, for each issue of a
+//     and a tab, then the id, last update, tags joined by ", " and title, separated by tabs, for each issue of a
 //     column that is not collapsed; blank lines separate columns. Data: {"columns": [{"status", "collapsed",
 //     "count", "issues"}, …]}, where issues are rows as ls gives them and are [] for a collapsed column, whatever its
 //     count. With --html, it writes the page board.HTML makes, every column's issues included, to the file, replacing
 //     it through store.WriteFileAtomic with mode 0644: a relative name is relative to Env.Dir, the folder must
-//     exist, and an empty name is a usage error. The page is one fixed template filled with data; it loads and runs
+//     exist, an empty name is a usage error and a folder is an "error". The page is one fixed template filled with data; it loads and runs
 //     nothing. Its title names the tracker by the name of the folder that holds the .cairn, and it says when Env.Now
 //     made it. Text: "wrote <the file>\n". Data: {"file": its path, made absolute as above, "issues": how many
 //     issues the page holds}. Neither has "total".

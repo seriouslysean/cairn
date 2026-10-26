@@ -311,11 +311,11 @@ Read-only context:
 - internal/cli/help_test.go
 
 ## Step 14: board
-`board` and `board --html <file>` show one tracker as columns, one per status in the config's order, for a person to look
-at while agents keep using the CLI. It was the fourth of the "Later" steps and comes first because the owner asked for
-it, and only one tracker exists to show.
-- `board` prints a section per status, with a header that counts its issues and a line per issue: id, title, tags and
-  last update. A closed or archived status is collapsed and prints only its count.
+`board` and `board --html <file>` show one tracker as columns, one per status in the config's order, for a person to
+look at while agents keep using the CLI. It was the fourth of the "Later" steps and comes first because the owner asked
+for it, and only one tracker exists to show.
+- `board` prints a section per status, with a header that counts its issues and a line per issue: id, last update,
+  tags and title. A closed or archived status is collapsed and prints only its count.
 - `board --html <file>` writes one page. The page is a fixed template compiled in with `embed` and filled by
   `html/template`, so a run changes data and never code. Every column is a `<details>` element, shut for a collapsed
   status, so it needs no script. A Content-Security-Policy meta tag allows inline CSS and nothing else.

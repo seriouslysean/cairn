@@ -151,8 +151,8 @@ counts issues as archived only once its `statuses` list `archived`.
 | Sync | `cairn pull`, `cairn push [--dry-run]` |
 | Help | `cairn help`, `cairn version` |
 
-`cairn search --meaning`, `cairn pull` and `cairn push` are in the table above but are not built yet. They come in later steps of [plan.md](plan.md). Until then they exit 2, a usage error.
-`cairn help` lists only what is built.
+`cairn search --meaning`, `cairn pull` and `cairn push` are in the table above but are not built yet. They come in
+later steps of [plan.md](plan.md). Until then they exit 2, a usage error. `cairn help` lists only what is built.
 
 - Every write takes `--as <actor>` and, optionally, `--persona <p>` and `--model <m>`. The actor can also come from the
   `CAIRN_ACTOR` environment variable. `new` and `comment` record all three as `by`, `persona` and `model`; `retract`
@@ -227,15 +227,16 @@ An agent with only the binary learns these from `cairn help`:
 - One column per status, in the order of the config's `statuses`, empty ones included. A status that an issue has and
   the config lacks, as after a change to the config, gets a column after those, in byte order.
 - A column lists its issues with the last update first. A card is an issue's id, title, tags and last update.
-- A column whose status the config's `closed` or `archived` names is collapsed: a terminal prints its count and not its
-  issues, and the page starts it shut. With the defaults that is `done`.
-- `cairn board` prints a section per column: a header, `backlog (179)`, then a line per issue with its id, title,
-  tags and last update, separated by tabs. A collapsed column's header says so, `done (476, collapsed)`, and it has no
-  lines. With `--json`, `data.columns` lists each column's `status`, `collapsed`, `count` and `issues`, empty for a
-  collapsed column.
+- A column is collapsed when the config's `closed` or `archived` names its status, the statuses `ls` leaves out unless
+  asked: a terminal prints its count and not its issues, and the page starts it shut. With the defaults that is `done`.
+- `cairn board` prints a section per column: a header, `backlog (179)`, then a line per issue with its id, last
+  update, tags and title, separated by tabs, the title last as in `ls`. A collapsed column's header says so,
+  `done (476, collapsed)`, and it has no lines. With `--json`, `data.columns` lists each column's `status`,
+  `collapsed`, `count` and `issues`, empty for a collapsed column.
 - `cairn board --html <file>` writes one page that shows the whole board, the cards of collapsed columns included, each
   column a `<details>` element that is open unless it is collapsed. A relative name is relative to the folder Cairn
-  runs in, and the file is replaced. To refresh the page, run the command again.
+  runs in, and the file is replaced, a link included, with the mode of the tracker's own files. A folder as the name is
+  an error. To refresh the page, run the command again.
 - The page is one fixed template compiled into the binary, and a run fills in data and changes nothing else, so the
   page never needs rewriting when the data changes. It is read-only and has no script. A Content-Security-Policy in
   it allows inline CSS and nothing else: the page loads nothing from the network, and the file works offline.

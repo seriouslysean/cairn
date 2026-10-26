@@ -95,7 +95,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 <body>
 <header>
 <h1>{{.Tracker}}</h1>
-<p class="meta">{{.Total}} issues, read-only snapshot from {{.Generated}}</p>
+<p class="meta">Issues: {{.Total}}. Read-only snapshot from {{.Generated}}.</p>
 </header>
 <main class="board">
 {{range .Columns -}}
