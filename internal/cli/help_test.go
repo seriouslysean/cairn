@@ -22,6 +22,7 @@ var helpUsage = []string{
 	`milestone new <id> "title" [--due YYYY-MM-DD]`,
 	`milestone edit <id> [--title t] [--status s] [--due YYYY-MM-DD]`,
 	`search <words>... [--archived] [--limit N | --all]`,
+	`board [--html <file>]`,
 	`version`,
 	`help`,
 }
