@@ -14,6 +14,7 @@ Cairn is an issue tracker for coding agents first and people second. `docs/spec.
 ## Rules
 - Tests are the spec. Each step's tests are written before its code and are never edited to make the code pass. If a
   test looks wrong, say so in the PR.
+- Before writing or changing a test, read https://github.com/splitleafhq/.github/blob/main/docs/testing.md.
 - Every command works without prompts or an editor, takes `--json`, and uses the exit codes in `docs/spec.md`.
 - All writes go through `store.WriteFileAtomic`.
 - No personal data, machine paths or names from anyone's private setup in code, tests, docs or fixtures. Examples use
