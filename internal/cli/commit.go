@@ -55,9 +55,9 @@ func (c *call) commit(command string) {
 	}
 }
 
-// clean reports whether git status shows nothing to commit at p. It takes no optional lock, so it does not get in the
-// way of the writer it is checking on.
+// clean reports whether git status shows nothing to commit at p. Ignored files count, since git will not commit them.
+// It takes no optional lock, so it does not get in the way of the writer it is checking on.
 func (g gitRepo) clean(p string) bool {
-	out, err := g.run("--no-optional-locks", "status", "--porcelain", "--", p)
+	out, err := g.run("--no-optional-locks", "status", "--porcelain", "--ignored", "--", p)
 	return err == nil && len(out) == 0
 }
