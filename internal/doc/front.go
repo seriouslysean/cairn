@@ -4,8 +4,9 @@
 // then a line "---". A key is a lower-case letter followed by lower-case letters, digits, "_" or "-". The value
 // follows the first ": " (or is empty when the line ends at "key:"). A value is plain text (spaces and tabs at its end
 // are dropped, as YAML does), a double-quoted Go string literal (it starts with `"`), or a flow list (it starts with
-// "[" and ends with "]"), whose items are split on "," and trimmed. Blank lines inside the frontmatter are skipped; any other line is an error. A frontmatter line
-// can end in "\r\n" as well as "\n", as files checked out on Windows do; Format writes "\n".
+// "[" and ends with "]"), whose items are split on "," and trimmed. Blank lines inside the frontmatter are skipped;
+// any other line is an error. A frontmatter line can end in "\r\n" as well as "\n", as files checked out on Windows
+// do; Format writes "\n".
 package doc
 
 import (
