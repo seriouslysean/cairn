@@ -301,6 +301,25 @@ func TestCommitRefusedByAHook(t *testing.T) {
 	}
 }
 
+// A repository that ignores the tracker refuses to stage the write. git status lists nothing at an ignored path, but
+// that is not nothing to commit: the write stands with the warning.
+func TestCommitIgnoredByTheRepository(t *testing.T) {
+	tr := commitTracker(t, "")
+	appendTo(t, filepath.Join(tr.dir, ".git", "info", "exclude"), "/.cairn\n")
+	before := tr.headCommit()
+	code, _, errOut := tr.run("new", "a")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errOut)
+	}
+	if lines := warningLines(t, errOut); len(lines) != 1 ||
+		!strings.HasPrefix(lines[0], "cairn: warning: not committed: ") {
+		t.Fatalf("stderr %q", errOut)
+	}
+	if tr.headCommit() != before {
+		t.Fatal("committed an ignored path")
+	}
+}
+
 // Without a repository, and without git at all, a write still succeeds, with the warning.
 func TestCommitWithoutARepository(t *testing.T) {
 	tr := newTracker(t)
