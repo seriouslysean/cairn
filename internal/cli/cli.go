@@ -54,8 +54,9 @@
 // When git fails (no git, no repository, another writer's lock, a hook), or config.yml cannot be read after a write
 // that did not need it, the write stands and the command still succeeds, with the warning
 // "not committed: <the error>". But when git status then shows nothing left to commit at the path, another writer
-// committed the change first, and there is no warning. A write that fails commits nothing, and init commits only as
-// init --own-branch describes.
+// committed the change first, and there is no warning, unless git ignores the path itself: git status shows nothing
+// there and git add refuses it, so it still warns. Ignored files inside the path do not count. A write that fails
+// commits nothing, and init commits only as init --own-branch describes.
 //
 // Commands:
 //   - init: makes .cairn in Env.Dir (it does not look upward for a place to put it). It is "exists", and changes
