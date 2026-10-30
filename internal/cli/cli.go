@@ -72,7 +72,8 @@
 //     "attached <the .cairn path> to origin/cairn\n". Otherwise it makes it: init's files with commit: true in
 //     config.yml, git init on the branch cairn, with origin's URL as the remote origin and origin/cairn as the
 //     branch's upstream when the code repository has an origin, and one commit of every file, "chore(cairn): init".
-//     When that commit fails, the tracker stands, uncommitted, with the warning "not committed: <the error>". Its
+//     When a step before that commit fails, it removes .cairn and is an "error", so init can run again; the exclude
+//     line stays. When that commit fails, the tracker stands, uncommitted, with the warning "not committed: <the error>". Its
 //     text is then "initialized <the .cairn path> on branch cairn\n". Data either way: {"dir": the .cairn path,
 //     "branch": "cairn"}. It never pushes.
 //   - new "title" [--body text] [--tag t]... [--milestone m] [--due YYYY-MM-DD]: adds an issue with the

@@ -102,13 +102,31 @@ func (c *call) initOwnBranch() (output, error) {
 	if err != nil {
 		return output{}, err
 	}
+	// A tracker left half made would block the next init, so a failed setup removes it.
+	if err := setUpOwnBranch(s, url); err != nil {
+		return output{}, errors.Join(err, os.RemoveAll(s.Dir))
+	}
+	t := gitRepo{dir: s.Dir}
+	_, err = t.run("add", "-A")
+	if err == nil {
+		_, err = t.run("commit", "-q", "-m", initMessage)
+	}
+	if err != nil {
+		c.warn(notCommittedPrefix + err.Error())
+	}
+	return output{initJSON{Dir: s.Dir, Branch: ownBranch}, "initialized " + s.Dir + " on branch " + ownBranch + "\n"}, nil
+}
+
+// setUpOwnBranch turns commit on write on in s and makes s's folder a git repository on ownBranch, with url, when it
+// is not empty, as its origin and the upstream of ownBranch.
+func setUpOwnBranch(s *store.Store, url string) error {
 	cfg, err := s.Config()
 	if err != nil {
-		return output{}, err
+		return err
 	}
 	cfg.Commit = true
 	if err := s.SaveConfig(cfg); err != nil {
-		return output{}, err
+		return err
 	}
 	t := gitRepo{dir: s.Dir}
 	setup := [][]string{{"init", "-q", "--initial-branch", ownBranch}}
@@ -119,17 +137,10 @@ func (c *call) initOwnBranch() (output, error) {
 	}
 	for _, args := range setup {
 		if _, err := t.run(args...); err != nil {
-			return output{}, err
+			return err
 		}
 	}
-	_, err = t.run("add", "-A")
-	if err == nil {
-		_, err = t.run("commit", "-q", "-m", initMessage)
-	}
-	if err != nil {
-		c.warn(notCommittedPrefix + err.Error())
-	}
-	return output{initJSON{Dir: s.Dir, Branch: ownBranch}, "initialized " + s.Dir + " on branch " + ownBranch + "\n"}, nil
+	return nil
 }
 
 // addExclude adds excludeLine to the exclude file at path, making the file and its folder when they are missing,

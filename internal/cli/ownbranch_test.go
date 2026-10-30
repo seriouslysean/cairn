@@ -238,6 +238,29 @@ func TestOwnBranchBranches(t *testing.T) {
 	}
 }
 
+// A setup step that fails in the tracker's repository, here git init, is an error that leaves no .cairn behind, so
+// init --own-branch runs again once the cause is gone.
+func TestInitOwnBranchSetupFails(t *testing.T) {
+	tr := codeClone(t)
+	root := filepath.Dir(tr.dir)
+	bad, global := filepath.Join(root, "bad"), filepath.Join(root, "global")
+	// A config that git reads only in a repository at .cairn, and cannot parse, so git init there fails.
+	if err := os.WriteFile(bad, []byte("[\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(global, []byte("[includeIf \"gitdir:**/.cairn/\"]\n\tpath = "+bad+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", global)
+	tr.wantError(1, "error", "init", "--own-branch")
+	noCairn(t, tr.dir)
+
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	if code, out, errOut := tr.run("init", "--own-branch"); code != 0 || errOut != "" {
+		t.Fatalf("init --own-branch again: exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+}
+
 // A first commit that fails leaves the tracker made, uncommitted, with the warning "not committed: …".
 func TestInitOwnBranchCommitFails(t *testing.T) {
 	tr := codeClone(t)
