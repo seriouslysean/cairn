@@ -88,6 +88,16 @@ func runMilestoneNew(c *call) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
+	ids, err := s.MilestoneIDs()
+	if err != nil {
+		return output{}, err
+	}
+	for _, other := range ids {
+		if other != milestoneID && strings.EqualFold(other, milestoneID) {
+			return output{}, existsError(fmt.Sprintf("milestone %q already exists, and %q differs from it only in case",
+				other, milestoneID))
+		}
+	}
 	switch _, err := s.LoadMilestone(milestoneID); {
 	case err == nil:
 		return output{}, existsError(fmt.Sprintf("milestone %q already exists", milestoneID))

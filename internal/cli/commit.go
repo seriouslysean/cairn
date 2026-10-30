@@ -21,6 +21,9 @@ const (
 	notCommittedPrefix = "not committed: "
 )
 
+// literal starts a pathspec that git takes as it is, so a "*" or "?" in a milestone id matches no other file.
+const literal = ":(literal)"
+
 // wroteIssue records that the write changed the issue issueID.
 func (c *call) wroteIssue(s *store.Store, issueID string) {
 	c.wrote = &write{store: s, id: issueID, path: path.Join(store.IssuesDir, issueID)}
@@ -46,11 +49,12 @@ func (c *call) commit(command string) {
 	actor, _ := c.actor() // the write has checked it
 	msg := fmt.Sprintf("%s%s %s (by %s)", commitPrefix, command, w.id, actor)
 	g := gitRepo{dir: w.store.Dir}
-	_, err = g.run("add", "-A", "--", w.path)
+	spec := literal + w.path
+	_, err = g.run("add", "-A", "--", spec)
 	if err == nil {
-		_, err = g.run("commit", "-m", msg, "--", w.path)
+		_, err = g.run("commit", "-m", msg, "--", spec)
 	}
-	if err != nil && !g.clean(w.path) {
+	if err != nil && !g.clean(spec) {
 		c.warn(notCommittedPrefix + err.Error())
 	}
 }

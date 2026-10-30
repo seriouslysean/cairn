@@ -102,7 +102,8 @@ A retracted comment adds `retracted_by`, `retracted_at`, `retracted_reason` and,
 Same frontmatter as an issue (`id`, `title`, `status`, `due`), and a body. It has no comments. Its status is one of the
 config's statuses. Commands keep the body but don't write it; it is edited by hand. Its id is its file name without
 `.md`: not empty, with no `/`, and not starting with `.`. The milestone an issue names follows the same rule, or is
-empty.
+empty. `milestone new` refuses an id that differs only in case from one that has a file, since the two name one file
+on a case-insensitive file system.
 
 ### Config
 `config.yml` is frontmatter with an empty body, like every other file:

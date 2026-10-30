@@ -2,9 +2,9 @@
 //
 // Frontmatter is a strict subset of YAML. The file starts with a line "---", then has one "key: value" per line,
 // then a line "---". A key is a lower-case letter followed by lower-case letters, digits, "_" or "-". The value
-// follows the first ": " (or is empty when the line ends at "key:"). A value is plain text, a double-quoted Go
-// string literal (it starts with `"`), or a flow list (it starts with "[" and ends with "]"), whose items are split
-// on "," and trimmed. Blank lines inside the frontmatter are skipped; any other line is an error. A frontmatter line
+// follows the first ": " (or is empty when the line ends at "key:"). A value is plain text (spaces and tabs at its end
+// are dropped, as YAML does), a double-quoted Go string literal (it starts with `"`), or a flow list (it starts with
+// "[" and ends with "]"), whose items are split on "," and trimmed. Blank lines inside the frontmatter are skipped; any other line is an error. A frontmatter line
 // can end in "\r\n" as well as "\n", as files checked out on Windows do; Format writes "\n".
 package doc
 
@@ -19,17 +19,18 @@ import (
 
 // The frontmatter's syntax.
 const (
-	delimiter = "---"        // the line that opens and closes the frontmatter
-	keyEnd    = ":"          // ends a key; "key:" alone has an empty value
-	separator = keyEnd + " " // between a key and a value
-	quote     = `"`          // starts a quoted value
-	comment   = "#"          // starts a YAML comment, so a plain value can't
-	listOpen  = "["
-	listClose = "]"
-	listSep   = ","
-	listJoin  = listSep + " " // between the items Format writes
-	newline   = "\n"
-	cr        = "\r" // before newline in a CRLF line ending
+	delimiter  = "---"        // the line that opens and closes the frontmatter
+	keyEnd     = ":"          // ends a key; "key:" alone has an empty value
+	separator  = keyEnd + " " // between a key and a value
+	quote      = `"`          // starts a quoted value
+	comment    = "#"          // starts a YAML comment, so a plain value can't
+	plainSpace = " \t"        // dropped from the end of a plain value, as YAML does
+	listOpen   = "["
+	listClose  = "]"
+	listSep    = ","
+	listJoin   = listSep + " " // between the items Format writes
+	newline    = "\n"
+	cr         = "\r" // before newline in a CRLF line ending
 )
 
 // Field is one frontmatter line. A scalar sets Value and leaves List nil. A list sets IsList and List; an empty
@@ -178,7 +179,7 @@ func parseLine(s string) (Field, error) {
 			}
 		}
 	default:
-		f.Value = val
+		f.Value = strings.TrimRight(val, plainSpace)
 	}
 	return f, nil
 }
