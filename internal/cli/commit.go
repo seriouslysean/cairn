@@ -50,14 +50,21 @@ func (c *call) commit(command string) {
 	if err == nil {
 		_, err = g.run("commit", "-m", msg, "--", w.path)
 	}
-	if err != nil && !g.clean(w.path) {
+	if err != nil && (g.ignored(w.path) || !g.clean(w.path)) {
 		c.warn(notCommittedPrefix + err.Error())
 	}
 }
 
-// clean reports whether git status shows nothing to commit at p. Ignored files count, since git will not commit them.
-// It takes no optional lock, so it does not get in the way of the writer it is checking on.
+// clean reports whether git status shows nothing to commit at p. It takes no optional lock, so it does not get in the
+// way of the writer it is checking on.
 func (g gitRepo) clean(p string) bool {
-	out, err := g.run("--no-optional-locks", "status", "--porcelain", "--ignored", "--", p)
+	out, err := g.run("--no-optional-locks", "status", "--porcelain", "--", p)
 	return err == nil && len(out) == 0
+}
+
+// ignored reports whether the repository ignores p itself. git status lists nothing at an ignored path, but git add
+// refuses it, so the write is left uncommitted. Ignored files inside p do not count.
+func (g gitRepo) ignored(p string) bool {
+	_, err := g.run("check-ignore", "-q", "--", p)
+	return err == nil
 }
