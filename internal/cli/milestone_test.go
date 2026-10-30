@@ -259,3 +259,14 @@ func TestIssueMilestoneIsAMilestoneID(t *testing.T) {
 		t.Fatalf("an empty --milestone clears it: %+v", got)
 	}
 }
+
+// Ids that differ only in case name one file on a case-insensitive file system, so new refuses one next to the other
+// on every system, and leaves the file as it was.
+func TestMilestoneNewRefusesACaseVariant(t *testing.T) {
+	tr := newTracker(t)
+	tr.milestone("new", "v1", "One")
+	tr.wantError(1, "exists", "milestone", "new", "V1", "Other")
+	if f := tr.milestoneFile("v1"); f != "---\nid: v1\ntitle: One\nstatus: backlog\n---\n" {
+		t.Fatalf("exists changed the file: %q", f)
+	}
+}

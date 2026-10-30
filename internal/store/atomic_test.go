@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -78,4 +79,38 @@ func assertOnly(t *testing.T, dir string, names ...string) {
 	if strings.Join(got, ",") != strings.Join(names, ",") {
 		t.Fatalf("folder holds %v, want %v", got, names)
 	}
+}
+
+// The temporary file goes in the folder that the rename puts path in. Through "link/..", that is the folder above the
+// link's target, not the folder holding the link, which here is read-only so that a temporary file there fails.
+func TestWriteFileAtomicLinkThenDotDot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("links and read-only folders work differently")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root writes to read-only folders")
+	}
+	dir := t.TempDir()
+	target, from := filepath.Join(dir, "target"), filepath.Join(dir, "from")
+	if err := os.MkdirAll(filepath.Join(target, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(from, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(target, "sub"), filepath.Join(from, "link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(from, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(from, 0o755) })
+	sep := string(filepath.Separator)
+	if err := WriteFileAtomic(from+sep+"link"+sep+".."+sep+"page.html", []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(target, "page.html")); err != nil || string(b) != "x" {
+		t.Fatalf("got %q, %v", b, err)
+	}
+	assertOnly(t, target, "page.html", "sub")
 }

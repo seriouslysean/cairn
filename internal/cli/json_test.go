@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -22,5 +23,21 @@ func TestJSONWritesCharactersAsIs(t *testing.T) {
 		if !strings.Contains(out, c.want) || strings.Contains(out, `\u00`) {
 			t.Errorf("%q: want %s as is, got\n%s", c.args, c.want, out)
 		}
+	}
+}
+
+// --json before the command is not a command: the usage error still comes as the JSON envelope.
+func TestJSONBeforeTheCommand(t *testing.T) {
+	tr := newTracker(t)
+	code, out, errOut := tr.run("--json", "ls")
+	var e struct {
+		OK    bool `json:"ok"`
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(out), &e); err != nil || code != 2 || e.OK || e.Error.Code != "usage" ||
+		errOut == "" {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }
