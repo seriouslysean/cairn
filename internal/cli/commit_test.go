@@ -273,6 +273,31 @@ func TestCommitAlreadyCommitted(t *testing.T) {
 	}
 }
 
+// An ignored file in an issue's folder, such as an editor's swap file, is not a change left uncommitted: a write that
+// another writer has already committed still gets no warning.
+func TestCommitAlreadyCommittedWithAnIgnoredFile(t *testing.T) {
+	tr := commitTracker(t, "")
+	a := tr.write("new", "a")
+	appendTo(t, filepath.Join(tr.dir, ".git", "info", "exclude"), "*.swp\n")
+	if err := os.WriteFile(filepath.Join(tr.dir, ".cairn", "issues", a, ".issue.md.swp"), []byte("swap\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := tr.headCommit()
+	s, err := store.Find(tr.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &call{env: Env{Dir: tr.dir, Getenv: func(k string) string { return tr.env[k] }}}
+	c.wroteIssue(s, a)
+	c.commit("edit")
+	if c.warnings != nil {
+		t.Errorf("warnings %q", c.warnings)
+	}
+	if tr.headCommit() != before {
+		t.Fatal("committed again")
+	}
+}
+
 // A hook that refuses the commit runs once, and the write stands with the warning.
 func TestCommitRefusedByAHook(t *testing.T) {
 	if runtime.GOOS == "windows" {
