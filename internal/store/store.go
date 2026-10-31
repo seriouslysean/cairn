@@ -438,19 +438,12 @@ func (s *Store) RemoveComment(issueID, commentID string) error {
 // names that start with "." (temporary files included) are ignored. A file that does not parse, or whose id does not
 // match its file name, is an error. A missing milestones folder gives an empty list.
 func (s *Store) ListMilestones() ([]model.Milestone, error) {
-	entries, err := os.ReadDir(filepath.Join(s.Dir, milestonesDir))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
+	ids, err := s.MilestoneIDs()
 	if err != nil {
 		return nil, err
 	}
 	var milestones []model.Milestone
-	for _, e := range entries {
-		milestoneID, ok := strings.CutSuffix(e.Name(), docExt)
-		if e.IsDir() || !ok || !model.ValidMilestoneID(milestoneID) {
-			continue
-		}
+	for _, milestoneID := range ids {
 		m, err := s.LoadMilestone(milestoneID)
 		if err != nil {
 			return nil, err
@@ -459,6 +452,26 @@ func (s *Store) ListMilestones() ([]model.Milestone, error) {
 	}
 	slices.SortFunc(milestones, func(a, b model.Milestone) int { return strings.Compare(a.ID, b.ID) })
 	return milestones, nil
+}
+
+// MilestoneIDs returns the ids of the files in milestones/, without reading them: each file name without ".md" that
+// passes model.ValidMilestoneID. A missing milestones folder holds none.
+func (s *Store) MilestoneIDs() ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(s.Dir, milestonesDir))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, e := range entries {
+		milestoneID, ok := strings.CutSuffix(e.Name(), docExt)
+		if !e.IsDir() && ok && model.ValidMilestoneID(milestoneID) {
+			ids = append(ids, milestoneID)
+		}
+	}
+	return ids, nil
 }
 
 // LoadMilestone reads milestones/<id>.md. It returns ErrNotFound when the file is missing or the id cannot name one

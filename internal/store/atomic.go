@@ -14,7 +14,7 @@ const tempPattern = ".cairn-tmp-*"
 // ".cairn-tmp-"), syncs it, sets perm on it, and renames it over path. On any error the temporary file is removed
 // and path is left as it was. The folder must already exist.
 func WriteFileAtomic(path string, data []byte, perm fs.FileMode) (err error) {
-	f, err := os.CreateTemp(filepath.Dir(path), tempPattern)
+	f, err := os.CreateTemp(folder(path), tempPattern)
 	if err != nil {
 		return err
 	}
@@ -31,6 +31,15 @@ func WriteFileAtomic(path string, data []byte, perm fs.FileMode) (err error) {
 		return err
 	}
 	return os.Rename(f.Name(), path)
+}
+
+// folder is the folder part of path as written, ".." and links left for the system to resolve as the rename will.
+// filepath.Dir would clean "link/../a.md" to ".", which is not the folder rename resolves through the link.
+func folder(path string) string {
+	if dir, _ := filepath.Split(path); dir != "" {
+		return dir
+	}
+	return "."
 }
 
 // fill writes data to f, syncs it, and sets perm on it.

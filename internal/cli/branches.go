@@ -243,11 +243,19 @@ func blob(commit, p string) string {
 	return commit + ":./" + p
 }
 
+// pathspecEnv names the variables that change how git reads every pathspec. run leaves them out, so a pathspec cairn
+// gives, such as commit on write's ":(literal)" path, means the same in every environment.
+var pathspecEnv = []string{"GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS"}
+
 // run runs git with args and returns what it prints on stdout. A failure is an error that holds git's stderr on one
 // line, and unwraps to the *exec.ExitError when git ran.
 func (g gitRepo) run(args ...string) ([]byte, error) {
 	cmd := exec.Command(gitCommand, args...)
 	cmd.Dir = g.dir
+	cmd.Env = slices.DeleteFunc(cmd.Environ(), func(kv string) bool {
+		k, _, _ := strings.Cut(kv, "=")
+		return slices.Contains(pathspecEnv, k)
+	})
 	out, err := cmd.Output()
 	if err == nil {
 		return out, nil

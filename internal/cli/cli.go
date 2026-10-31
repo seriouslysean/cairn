@@ -133,9 +133,10 @@
 //     one last, then by id. Text: one "<id>\t<due>\t<issues>\t<title>\n" line each. Data: a list of {"id", "title",
 //     "status", "due", "issues"} (an empty list, never null).
 //   - milestone new <id> "title" [--due YYYY-MM-DD]: writes milestones/<id>.md with the config's first status. The id
-//     must not be empty, contain "/" or start with "." (a usage error). An id that already has a file is "exists",
-//     and a file that does not parse is an "error"; either way the file is left as it was. The title must not be
-//     blank. Text: the id and "\n". Data: the milestone.
+//     must not be empty, contain "/" or start with "." (a usage error). An id that already has a file, or that differs
+//     only in case from one that does (the two name one file on a case-insensitive file system), is "exists", and a
+//     file that does not parse is an "error"; either way the file is left as it was. The title must not be blank.
+//     Text: the id and "\n". Data: the milestone.
 //   - milestone edit <id> [--title t] [--status s] [--due YYYY-MM-DD]: changes only what is given, and at least one
 //     change is required. The title must not be blank, the status must be one of the config's, and an empty --due
 //     clears it. The file's other keys and its body are kept. A milestone without a file is not_found, and a file
@@ -353,7 +354,7 @@ type output struct {
 
 // Run runs one command and returns its exit code.
 func Run(args []string, env Env) int {
-	jsonOn := len(args) > 0 && scanJSON(args[1:])
+	jsonOn := scanJSON(args)
 	c := &call{env: env}
 	out, err := c.dispatch(args)
 	if err == nil {

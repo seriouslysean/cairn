@@ -144,3 +144,11 @@ func TestFormatRejectsDuplicateKey(t *testing.T) {
 		t.Fatal("want an error")
 	}
 }
+
+// YAML drops the spaces and tabs after a plain value, so a hand edit that leaves them reads as the value without them.
+func TestParsePlainValueTrailingSpace(t *testing.T) {
+	f, _, err := Parse([]byte("---\nstatus: done \t\n---\n"))
+	if err != nil || len(f) != 1 || f[0].Value != "done" {
+		t.Fatalf("%#v %v", f, err)
+	}
+}

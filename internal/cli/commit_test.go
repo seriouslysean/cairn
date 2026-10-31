@@ -487,3 +487,30 @@ func TestWarningsInJSON(t *testing.T) {
 		t.Fatalf("exit %d, warnings %q, stderr %q", code, got, errOut)
 	}
 }
+
+// A milestone id with glob characters commits its own file only: git takes the path as it is, not as a pattern that
+// also matches other milestones' uncommitted files. A pathspec setting in the user's environment changes neither.
+func TestCommitTakesAGlobIDAsItIs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip(`a file name can't hold "*"`)
+	}
+	for _, env := range []string{"", "GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS",
+		"GIT_ICASE_PATHSPECS"} {
+		t.Run(env, func(t *testing.T) {
+			tr := commitTracker(t, "")
+			tr.writeMilestone("v1", "---\nid: v1\ntitle: One\nstatus: backlog\n---\n")
+			if env != "" { // for cairn's write only: the test's own git calls take it too
+				t.Setenv(env, "1")
+			}
+			tr.write("milestone", "new", "v*", "Any")
+			os.Unsetenv(env)
+			_, _, changes := tr.head()
+			if want := []string{"A\t.cairn/milestones/v*.md"}; !reflect.DeepEqual(changes, want) {
+				t.Fatalf("committed %q, want %q", changes, want)
+			}
+			if st, want := tr.status(), []string{"?? .cairn/milestones/v1.md"}; !reflect.DeepEqual(st, want) {
+				t.Fatalf("status %q, want %q", st, want)
+			}
+		})
+	}
+}
